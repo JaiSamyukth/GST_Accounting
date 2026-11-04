@@ -142,10 +142,8 @@ function Gstr1({ period }: { period: string }) {
         )}
         <div className="sheet-foot small muted">Format {data.schema_version}. Check the JSON in the GST offline tool if the portal rejects it; the portal changes formats from time to time.</div>
       </div>
-      <div className="grid-2">
-        {hsnTable(data.hsn.b2b, "HSN summary, B2B")}
-        {hsnTable(data.hsn.b2c, "HSN summary, B2C")}
-      </div>
+      {hsnTable(data.hsn.b2b, "HSN summary, B2B")}
+      {hsnTable(data.hsn.b2c, "HSN summary, B2C")}
     </div>
   );
 }
@@ -168,6 +166,9 @@ function Gstr3b({ d, period }: { d: any; period: string }) {
             </tr>
           ))}</tbody>
         </table></div>
+        {Number(g.tables["4B(1) ITC reversed: rules 38, 42, 43 and section 17(5)"].cgst) + Number(g.tables["4B(1) ITC reversed: rules 38, 42, 43 and section 17(5)"].igst) > 0 && (
+          <div className="sheet-foot small" style={{ display: "block" }}>GST on purchase bills is shown in 4A as the portal lists it, and the part you cannot claim (5% without ITC, blocked items, reversals) is taken back in 4B(1). Only 4C is credit you actually use.</div>
+        )}
         {g.notes.length > 0 && <div className="sheet-foot" style={{ display: "block" }}>{g.notes.map((n: string, i: number) => <p key={i} className="small" style={{ margin: "2px 0" }}>{n}</p>)}</div>}
       </div>
       <div className="sheet">
@@ -310,7 +311,7 @@ function FileTab({ d, period, reload }: { d: any; period: string; reload: () => 
           {owner && <button className="linkbtn" onClick={() => setUnlock(true)}><ILock width={14} height={14} style={{ display: "inline" }} /> Unlock this period</button>}
         </div>
       )}
-      <ol className="steps sheet sheet-pad" style={{ paddingTop: 8, paddingBottom: 8 }}>
+      <div className="sheet"><div className="sheet-pad" style={{ paddingTop: 8, paddingBottom: 8, overflow: "hidden" }}><ol className="steps">
         <li className={rp?.approved_at ? "done" : "next"}>
           <span className="box">1</span>
           <span><b>Owner approves the figures</b><small>{rp?.approved_at ? `Approved ${date(rp.approved_at)}` : "Check the GSTR-1 and GSTR-3B tabs first. Problems marked Fix must be cleared."}</small></span>
@@ -331,7 +332,7 @@ function FileTab({ d, period, reload }: { d: any; period: string; reload: () => 
           <span><b>File GSTR-3B</b><small>Enter the figures from the GSTR-3B tab (or upload its JSON in the offline tool), offset the liability, file.</small></span>
           <button className="btn small quiet" onClick={() => download(`/returns/${period}/gstr3b.pdf`, "gstr3b.pdf").catch((e) => toast(e.message, true))}><IDownload />PDF</button>
         </li>
-      </ol>
+      </ol></div></div>
       {!d.gsp?.configured && <p className="small muted">Direct filing from this app is off: it needs a contract with a licensed GST Suvidha Provider. Filing through the portal works the same.</p>}
 
       <div className="grid-2">

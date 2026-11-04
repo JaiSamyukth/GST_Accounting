@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..models import Gstr2bEntry, Purchase
 from .gst import ZERO
 from .periods import months_in
+from .gst import inr
 
 TOLERANCE = Decimal("1.00")
 
@@ -47,9 +48,9 @@ def reconcile(db: Session, key: str, persist: bool = True) -> dict:
             used.add(e.id)
             diffs = []
             if abs(e.taxable_value - p.taxable_value) > TOLERANCE:
-                diffs.append(f"taxable value differs by ₹{e.taxable_value - p.taxable_value}")
+                diffs.append(f"taxable value differs by ₹{inr(e.taxable_value - p.taxable_value)}")
             if abs(_tax(e) - _tax(p)) > TOLERANCE:
-                diffs.append(f"tax differs by ₹{_tax(e) - _tax(p)}")
+                diffs.append(f"tax differs by ₹{inr(_tax(e) - _tax(p))}")
             if e.date and e.date != p.date:
                 diffs.append(f"date in 2B is {e.date.isoformat()}")
             if not e.itc_available:

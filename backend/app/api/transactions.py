@@ -21,6 +21,7 @@ from ..services.docs import build_purchase, build_sales, doc_dict, ensure_unlock
 from ..services.periods import fy_of, month_key
 from ..services.reports import build as build_report
 from .deps import date_range
+from ..services.gst import inr
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -201,7 +202,7 @@ def create_sale(body: SalesIn, u: User = Depends(current_user), db: Session = De
     except IntegrityError as e:
         db.rollback()
         raise HTTPException(409, f"Number {body.number} is already used") from e
-    audit(db, u, "create", "sales", d.id, f"Created {d.doc_type.replace('_', ' ')} {d.number} for ₹{d.total}", after=doc_dict(d))
+    audit(db, u, "create", "sales", d.id, f"Created {d.doc_type.replace('_', ' ')} {d.number} for ₹{inr(d.total)}", after=doc_dict(d))
     db.commit()
     return doc_dict(d)
 
@@ -326,7 +327,7 @@ def create_purchase(body: PurchaseIn, u: User = Depends(current_user), db: Sessi
     except IntegrityError as e:
         db.rollback()
         raise HTTPException(409, f"Bill {body.number} from this supplier is already recorded") from e
-    audit(db, u, "create", "purchase", p.id, f"Recorded bill {p.number} from {p.supplier_name} for ₹{p.total}", after=doc_dict(p))
+    audit(db, u, "create", "purchase", p.id, f"Recorded bill {p.number} from {p.supplier_name} for ₹{inr(p.total)}", after=doc_dict(p))
     db.commit()
     return doc_dict(p)
 

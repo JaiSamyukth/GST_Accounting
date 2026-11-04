@@ -113,7 +113,7 @@ export function Import() {
                   <div key={x.key} style={{ border: "1.5px solid var(--rule)", padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
                     <div><b className="h3">{x.label}</b><p className="small muted" style={{ margin: "4px 0 0" }}>{ABOUT[x.key]}</p></div>
                     <div className="btn-row" style={{ marginTop: "auto", gap: 8 }}>
-                      <button className="btn small primary" onClick={() => { setKind(x.key); setStep(1); }}>Import {x.label.toLowerCase()}</button>
+                      <button className="btn small primary" onClick={() => { setKind(x.key); setStep(1); }}>Import</button>
                       <button className="linkbtn small" onClick={() => download(`/imports/template/${x.key}.xlsx`, "template.xlsx").catch((e) => toast(e.message, true))}>Excel template</button>
                       <button className="linkbtn small" onClick={() => download(`/imports/template/${x.key}.csv`, "template.csv").catch((e) => toast(e.message, true))}>CSV</button>
                     </div>
@@ -126,7 +126,7 @@ export function Import() {
 
         {step === 1 && k && (
           <>
-            <div className="sheet-head"><h2 className="h2" ref={head} tabIndex={-1}>Upload {k.label.toLowerCase()}</h2><button className="linkbtn small" onClick={reset}>Change</button></div>
+            <div className="sheet-head"><h2 className="h2" ref={head} tabIndex={-1}>Upload: {k.label}</h2><button className="linkbtn small" onClick={reset}>Change</button></div>
             <div className="sheet-pad stack">
               {kind === "gstr2b" && (
                 <Field label="GSTR-2B for" htmlFor="p2b" hint="The month the GSTR-2B belongs to. A JSON from the portal sets this itself.">

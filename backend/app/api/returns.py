@@ -20,6 +20,7 @@ from ..services.docs import get_business
 from ..services.periods import (fy_of, gstr1_due, gstr3b_due, months_in, period_label, period_range, periods_for_fy)
 from ..services.recon import reconcile
 from ..services.returns import build_gstr1, build_gstr3b, compare_1_vs_3b
+from ..services.gst import inr
 
 router = APIRouter(prefix="/api/returns", tags=["returns"])
 
@@ -95,7 +96,7 @@ def overview(key: str, _: User = Depends(current_user), db: Session = Depends(ge
         {"key": "itc", "label": "Match purchases with GSTR-2B", "done": has_2b and recon and recon["summary"]["missing_in_2b"]["count"] == 0
          and recon["summary"]["mismatch"]["count"] == 0, "detail": "GSTR-2B imported" if has_2b else "GSTR-2B not imported yet"},
         {"key": "gstr1", "label": "Check GSTR-1", "done": not errors, "detail": f"{len(errors)} problems to fix" if errors else "No problems found"},
-        {"key": "gstr3b", "label": "Check GSTR-3B", "done": True, "detail": f"Pay ₹{g3['net_payable']} in cash"},
+        {"key": "gstr3b", "label": "Check GSTR-3B", "done": True, "detail": f"Pay ₹{inr(g3['net_payable'])} in cash"},
         {"key": "approve", "label": "Approve", "done": bool(rp and rp.approved_at), "detail": "Owner signs off the figures"},
         {"key": "file", "label": "File on the GST portal", "done": bool(rp and rp.gstr1_status == "filed" and rp.gstr3b_status == "filed"),
          "detail": "Upload the JSON, pay, file"},

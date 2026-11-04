@@ -144,3 +144,20 @@ def classify_sales_doc(doc_type: str, *, party_gstin: str | None, inter_state: b
     if is_export or (inter_state and total > b2cl_limit):
         return "cdnur"
     return "b2cs"
+
+
+def inr(v) -> str:
+    """Indian digit grouping: 123456.5 -> 1,23,456.50"""
+    d = money(v)
+    neg = d < 0
+    whole, frac = f"{abs(d):.2f}".split(".")
+    if len(whole) > 3:
+        head, tail = whole[:-3], whole[-3:]
+        groups = []
+        while len(head) > 2:
+            groups.insert(0, head[-2:])
+            head = head[:-2]
+        if head:
+            groups.insert(0, head)
+        whole = ",".join(groups + [tail])
+    return ("-" if neg else "") + whole + "." + frac

@@ -42,7 +42,7 @@ export function Reports() {
         </div>
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 260px) minmax(0, 1fr)", gap: 24 }} className="reports-grid">
-        <nav aria-label="Reports" className="sheet" style={{ alignSelf: "start" }}>
+        <nav aria-label="Reports" className="sheet hide-mobile" style={{ alignSelf: "start" }}>
           <ul style={{ listStyle: "none", margin: 0, padding: 8 }}>
             {list.data?.map((r) => (
               <li key={r.key}>
@@ -56,6 +56,12 @@ export function Reports() {
         </nav>
         <section aria-live="polite" style={{ minWidth: 0 }}>
           <div className="toolbar">
+            <div className="field show-sm" style={{ flex: "1 1 100%" }}>
+              <label htmlFor="r-kind">Report</label>
+              <select id="r-kind" className="select boxed" value={kind} onChange={(e) => setSp({ r: e.target.value }, { replace: true })}>
+                {list.data?.map((r) => <option key={r.key} value={r.key}>{r.title}</option>)}
+              </select>
+            </div>
             <PeriodPicker value={period} onChange={setPeriod} allowAll={false} />
             {period === "range" && (
               <>
@@ -95,7 +101,7 @@ export function Reports() {
           )}
         </section>
       </div>
-      <style>{`@media (max-width: 860px) { .reports-grid { grid-template-columns: 1fr !important; } .reports-grid nav ul { display: flex; overflow-x: auto; gap: 4px; } .reports-grid nav li { flex: none; } }`}</style>
+      <style>{`@media (max-width: 860px) { .reports-grid { grid-template-columns: 1fr !important; } .reports-grid .hide-mobile { display: none; } }`}</style>
     </div>
   );
 }

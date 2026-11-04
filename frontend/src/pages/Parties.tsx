@@ -72,9 +72,9 @@ export function Parties() {
                       <td className="cell-main">
                         <button className="linkbtn" style={{ textAlign: "left" }} onClick={() => setEdit({ ...p })}>{p.name}</button>
                         {!p.active && <> <span className="tag">Switched off</span></>}
-                        <div className="tiny muted">{p.gstin || "No GSTIN"}</div>
+                        <div className="tiny muted show-sm">{p.gstin || "No GSTIN"}</div>
                       </td>
-                      <td className="hide-sm num">{p.gstin || <span className="muted">None</span>}</td>
+                      <td className="hide-sm">{p.gstin || <span className="muted">None</span>}</td>
                       <td className="cell-amt">{stateName(meta, p.state_code)}</td>
                       <td className="hide-sm num">{p.phone}</td>
                     </tr>

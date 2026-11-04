@@ -44,7 +44,7 @@ export function Home() {
       )}
       {h.pending_previous && (
         <div className="note warn" style={{ marginBottom: 20 }}>
-          <p><b>{h.pending_previous.label} is not filed yet.</b> GSTR-1 was due {date(h.pending_previous.gstr1_due)} and GSTR-3B {date(h.pending_previous.gstr3b_due)}. <Link to={`/returns/${h.pending_previous.period}`}>Finish {h.pending_previous.label}</Link></p>
+          <p><b>{h.pending_previous.label} is not filed yet.</b> GSTR-1 {daysUntil(h.pending_previous.gstr1_due) < 0 ? "was" : "is"} due {date(h.pending_previous.gstr1_due)} and GSTR-3B {date(h.pending_previous.gstr3b_due)}. <Link to={`/returns/${h.pending_previous.period}`}>Finish {h.pending_previous.label}</Link></p>
         </div>
       )}
 
@@ -64,8 +64,8 @@ export function Home() {
           <div className="sheet-head"><h2 className="h2" id="fig">The month in figures</h2><Link className="linkbtn small" to="/reports">All reports</Link></div>
           <div className="sheet-pad">
             <Leaders rows={[
-              { label: <Link to="/sales" className="linkbtn" style={{ fontWeight: 400 }}>Sales, {h.sales_count} {h.sales_count === 1 ? "bill" : "bills"}</Link>, value: <Money v={h.sales_total} /> },
-              { label: <Link to="/purchases" className="linkbtn" style={{ fontWeight: 400 }}>Purchases, {h.purchase_count} {h.purchase_count === 1 ? "bill" : "bills"}</Link>, value: <Money v={h.purchase_total} /> },
+              { label: <Link to="/sales" className="linkbtn" style={{ fontWeight: 400 }}>Sales this month, {h.sales_count} {h.sales_count === 1 ? "bill" : "bills"}</Link>, value: <Money v={h.sales_total} /> },
+              { label: <Link to="/purchases" className="linkbtn" style={{ fontWeight: 400 }}>Purchases this month, {h.purchase_count} {h.purchase_count === 1 ? "bill" : "bills"}</Link>, value: <Money v={h.purchase_total} /> },
               { label: "GST charged on sales", value: <Money v={h.output_tax} /> },
               { label: <>Less <Term k="itc">input tax credit</Term></>, value: <Money v={-h.eligible_itc} /> },
               { label: "GST to pay in cash", value: <Money v={h.net_payable} />, grand: true },

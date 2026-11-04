@@ -272,7 +272,7 @@ export function DocEditor({ kind }: { kind: "sales" | "purchase" }) {
                         <td className="wide" data-label="Description"><input aria-label={`Line ${i + 1} description`} className="input" value={l.description} onChange={(e) => setLine(i, "description", e.target.value)} placeholder={kind === "sales" ? "Wedding lunch, 150 members" : "Sunflower oil 15 L"} /></td>
                         <td data-label="HSN/SAC"><input aria-label={`Line ${i + 1} HSN or SAC`} className="input" list="hsn-list" inputMode="numeric" value={l.hsn_sac} onChange={(e) => pickHsn(i, e.target.value.replace(/\D/g, "").slice(0, 8))} style={{ width: 96 }} /></td>
                         <td data-label="Qty"><input aria-label={`Line ${i + 1} quantity`} className="input right" inputMode="decimal" value={l.qty} onChange={(e) => setLine(i, "qty", e.target.value)} style={{ width: 80 }} /></td>
-                        <td data-label="Unit"><select aria-label={`Line ${i + 1} unit`} className="select" value={l.unit} onChange={(e) => setLine(i, "unit", e.target.value)}>{meta.uqc.map((u) => <option key={u}>{u}</option>)}</select></td>
+                        <td data-label="Unit"><select aria-label={`Line ${i + 1} unit`} className="select" style={{ minWidth: 76 }} value={l.unit} onChange={(e) => setLine(i, "unit", e.target.value)}>{meta.uqc.map((u) => <option key={u}>{u}</option>)}</select></td>
                         <td data-label="Rate ₹"><input aria-label={`Line ${i + 1} rate`} className="input right" inputMode="decimal" value={l.unit_price} onChange={(e) => setLine(i, "unit_price", e.target.value)} placeholder="0.00" style={{ width: 96 }} /></td>
                         <td data-label="Discount ₹"><input aria-label={`Line ${i + 1} discount`} className="input right" inputMode="decimal" value={l.discount} onChange={(e) => setLine(i, "discount", e.target.value)} placeholder="0" style={{ width: 80 }} /></td>
                         <td data-label="GST">
@@ -289,7 +289,7 @@ export function DocEditor({ kind }: { kind: "sales" | "purchase" }) {
                           <td data-label="Credit">
                             <select aria-label={`Line ${i + 1} input tax credit`} className="select" value={l.itc_eligible === null || l.itc_eligible === undefined ? "auto" : l.itc_eligible ? "yes" : "no"}
                               onChange={(e) => setLine(i, "itc_eligible", e.target.value === "auto" ? null : e.target.value === "yes")} title={l.itc_reason || ""}>
-                              <option value="auto">{isNew ? "Auto" : l.itc_eligible ? "Claim" : "No claim"}</option><option value="yes">Claim</option><option value="no">No claim</option>
+                              <option value="auto">{isNew ? "Auto" : l.itc_eligible ? "Claim" : "No"}</option><option value="yes">Claim</option><option value="no">No</option>
                             </select>
                           </td>
                         )}

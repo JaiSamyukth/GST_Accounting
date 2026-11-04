@@ -9,7 +9,7 @@ import { Tour } from "./Tour";
 const PRIMARY = [
   { to: "/", label: "This month", short: "Home", icon: IHome, tour: "home" },
   { to: "/sales", label: "Sales", short: "Sales", icon: ISales, tour: "sales" },
-  { to: "/purchases", label: "Purchases", short: "Bills", icon: IPurchase, tour: "purchases" },
+  { to: "/purchases", label: "Purchases", short: "Purchases", icon: IPurchase, tour: "purchases" },
   { to: "/returns", label: "GST returns", short: "Returns", icon: IReturns, tour: "returns" },
 ];
 const SECONDARY = [

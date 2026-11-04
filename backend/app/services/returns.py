@@ -12,6 +12,7 @@ from ..models import Business, Gstr2bEntry, ItcAdjustment, Purchase, ReturnPerio
 from .gst import ZERO, money
 from .gstin import validate_gstin
 from .periods import months_in, period_range, return_fp
+from .gst import inr
 
 SCHEMA_VERSION = "gstr1-2025.05 / gstr3b-2024.01"
 HEADS = ("igst", "cgst", "sgst", "cess")
@@ -451,7 +452,7 @@ def build_gstr3b(db: Session, b: Business, key: str, period: ReturnPeriod | None
         "output_tax": output_tax, "eligible_itc": net_itc,
         "net_payable": sum(cash.values(), ZERO),
         "deferred_itc": deferred, "deferred_docs": deferred_docs,
-        "notes": ([f"Outward supplies on which the customer pays tax (reverse charge): ₹{money(rcm_out_note)} taxable, not in 3.1(a)"]
+        "notes": ([f"Outward supplies on which the customer pays tax (reverse charge): ₹{inr(money(rcm_out_note))} taxable, not in 3.1(a)"]
                   if rcm_out_note else []) + ([] if has_2b else ["GSTR-2B has not been imported for this period, so ITC is taken from your purchase records. Import 2B to confirm it"]),
     }
 

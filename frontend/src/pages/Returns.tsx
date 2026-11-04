@@ -39,7 +39,7 @@ export function Returns() {
                   <tr key={p.period} className="clickable" onClick={(e) => { if (!(e.target as HTMLElement).closest("a")) nav(`/returns/${p.period}`); }}>
                     <td className="cell-main"><Link className="rowlink" to={`/returns/${p.period}`}>{p.label}</Link>{p.locked && <span className="tag ok" style={{ marginLeft: 8 }}>Locked</span>}
                       <div className="tiny muted">{p.sales_count} sales · {p.purchase_count} bills</div></td>
-                    <td className="cell-main"><StatusTag s={p.gstr1_status} /> <span className="tiny muted">{p.gstr1_status === "filed" ? `ARN ${p.gstr1_arn}` : `due ${date(p.gstr1_due)}`}</span></td>
+                    <td className="cell-main"><StatusTag s={p.gstr1_status} />{p.overdue && p.gstr1_status !== "filed" && <span className="tag bad" style={{ marginLeft: 6 }}>Late</span>} <span className="tiny muted">{p.gstr1_status === "filed" ? `ARN ${p.gstr1_arn}` : `due ${date(p.gstr1_due)}`}</span></td>
                     <td className="hide-sm"><StatusTag s={p.gstr3b_status} /> <span className="tiny muted">{p.gstr3b_status === "filed" ? `ARN ${p.gstr3b_arn}` : `due ${date(p.gstr3b_due)}`}</span>
                       {p.overdue && <span className="tag bad" style={{ marginLeft: 6 }}>Late</span>}</td>
                     <td className="num hide-sm"><Money v={p.output_tax} /></td>

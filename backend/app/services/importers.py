@@ -21,6 +21,7 @@ from .docs import build_purchase, build_sales, locked_period_for
 from .gst import ZERO, money
 from .gstin import STATES, normalise_gstin, state_from_gstin, validate_gstin
 from .periods import fy_of, period_range
+from .gst import inr
 
 SCHEMA_VERSION = "dc-import-1.0"
 TOL = Decimal("1.00")
@@ -498,7 +499,7 @@ def validate(db: Session, kind: str, headers: list[str], rows: list[list], mappi
         if kind == "sales" and rec.get("unit_price") and rec.get("qty") and rec.get("taxable_value") is not None:
             gross = money(rec["qty"] * rec["unit_price"]) - (rec.get("discount") or ZERO)
             if abs(gross - rec["taxable_value"]) > TOL:
-                errs.append(f"Quantity x rate less discount is ₹{gross}, but taxable value is ₹{rec['taxable_value']}")
+                errs.append(f"Quantity x rate less discount is ₹{inr(gross)}, but taxable value is ₹{inr(rec['taxable_value'])}")
         rec["_errors"], rec["_warnings"] = errs, warns
         records.append(rec)
 
@@ -529,7 +530,7 @@ def _check_tax(rec: dict, b: Business, kind: str, errs: list[str]) -> None:
     elif not inter and given["igst"]:
         errs.append("Intra-state supply should carry CGST and SGST, not IGST (check place of supply)")
     elif abs(sum(given.values(), ZERO) - exp_total) > TOL:
-        errs.append(f"Tax should be about ₹{exp_total} at {rate}% on ₹{tv}, file says ₹{sum(given.values(), ZERO)}")
+        errs.append(f"Tax should be about ₹{inr(exp_total)} at {rate}% on ₹{inr(tv)}, file says ₹{inr(sum(given.values(), ZERO))}")
 
 
 def _doc_key(kind, r):
