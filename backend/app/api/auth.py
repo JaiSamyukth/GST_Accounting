@@ -54,8 +54,14 @@ def _set_cookie(resp: Response, token: str) -> None:
 
 
 @router.get("/status")
-def status(db: Session = Depends(get_db)):
-    return {"needs_setup": not db.scalar(select(func.count(User.id)))}
+def status(request: Request, db: Session = Depends(get_db)):
+    """Setup state, plus the signed-in user when the session cookie is valid (no 401 for a signed-out visitor)."""
+    user = None
+    try:
+        user = user_out(current_session(request, db).user)
+    except HTTPException:
+        pass
+    return {"needs_setup": not db.scalar(select(func.count(User.id))), "user": user}
 
 
 @router.post("/setup")
