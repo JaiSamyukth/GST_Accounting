@@ -434,3 +434,4 @@ fieldset:disabled .select { background-image: none; }
 
 .month-grid > .sheet, .grid-2 > .sheet, .grid-2 > form.sheet { margin-top: 0; }
 .table-wrap:focus-visible { outline-offset: -3px; }
+.show-sm { display: none; } @media (max-width: 700px) { .show-sm { display: block; } }

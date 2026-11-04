@@ -41,7 +41,7 @@ export function SalesList() {
         cols={[
           { key: "date", label: "Date", className: "hide-sm", render: (r) => date(r.date) },
           { key: "no", label: "Number", className: "cell-main", render: (r) => <><Link className="rowlink" to={`/sales/${r.id}`}>{r.number.replace(/~A$/, "")}</Link>{r.doc_type !== "invoice" && <> <span className="tag">{DOC_LABEL[r.doc_type]}</span></>}{r.status !== "active" && <> <StatusTag s={r.status} /></>}{r.attachments > 0 && <IClip width={14} height={14} style={{ display: "inline", marginLeft: 6 }} aria-label="Has attachment" />}<div className="small muted" style={{ display: "none" }} /></> },
-          { key: "party", label: "Customer", className: "cell-main", render: (r) => <><span>{r.party_name}</span><div className="tiny muted">{date(r.date)}{r.party_gstin ? ` · ${r.party_gstin}` : ""}</div></> },
+          { key: "party", label: "Customer", className: "cell-main", render: (r) => <><span>{r.party_name}</span>{r.party_gstin && <div className="tiny muted">{r.party_gstin}</div>}<div className="tiny muted show-sm">{date(r.date)}</div></> },
           { key: "sec", label: "Return section", className: "hide-sm", render: (r) => <Term k={r.section === "b2b" || r.section === "cdnr" ? "b2b" : r.section === "b2cl" ? "b2cl" : "b2c"}>{SECTION_LABEL[r.section] || r.section}</Term> },
           { key: "tax", label: "GST", className: "num hide-sm", render: (r) => <Money v={Number(r.cgst) + Number(r.sgst) + Number(r.igst) + Number(r.cess)} /> },
           { key: "total", label: "Total", className: "num cell-amt", render: (r) => <Money v={r.doc_type === "credit_note" ? -r.total : r.total} /> },
