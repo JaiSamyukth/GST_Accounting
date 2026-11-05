@@ -11,7 +11,8 @@ is usable.
 **Goal:** an empty Next.js app that builds on Vercel.
 
 - `package.json` with Next.js, React, TypeScript, Drizzle, `postgres`, `zod`, `bcryptjs`,
-  `pdfkit`, `exceljs`, `csv-parse`, `fflate`, Vitest, PGlite, ESLint.
+  `pdfkit`, `exceljs`, `csv-parse`, `fflate`, `@aws-sdk/client-s3`,
+  `@aws-sdk/s3-request-presigner`, Vitest, PGlite, ESLint.
 - `next.config.ts`, `tsconfig.json` (strict), `.eslintrc`, `vitest.config.ts`, `drizzle.config.ts`.
 - `src/app/layout.tsx`, `globals.css`, a placeholder home page.
 - `src/db/client.ts` (`postgres` + Drizzle, singleton in dev), `src/db/schema.ts` stub.
@@ -51,8 +52,10 @@ is usable.
 
 **Goal:** schema in Neon and a working sign-in.
 
-- Full `schema.ts` per spec section 7, with indexes and unique constraints.
+- Full `schema.ts` per spec section 7, with indexes and unique constraints, including `documents`.
 - `drizzle.config.ts`; generate the first migration; `db:push`.
+- `src/lib/storage.ts`: S3 client for Neon Object Storage (`putObject`, `getObject`,
+  `deleteObject`), path-style addressing, no public ACLs.
 - `src/lib/auth.ts`: bcrypt hash/verify, password rules, token creation, cookie helpers,
   `requireUser`, `requireOwner`.
 - Routes: status, setup, login, logout, me, change-password, reset, sessions list/revoke.
@@ -62,7 +65,8 @@ is usable.
 - Integration tests on PGlite: setup once, second setup rejected, login, throttling, roles,
   session expiry, reset token single use.
 
-**Done when:** sign-in works against Neon locally and in a Vercel preview.
+**Done when:** sign-in works against Neon locally and in a Vercel preview, and a test object can be
+written to and read from `gst-documents`.
 
 ## Phase 4 — Masters and settings
 
@@ -83,8 +87,12 @@ is usable.
 - Filters, pagination and accurate totals in SQL (fixing defect 1).
 - Invoice/credit-note PDF (`pdfkit`): business header, GSTIN, place of supply, HSN lines,
   tax summary, amount in words, signature line.
-- Screens: sales list, purchase list, shared document editor with live totals, print.
-- Tests: totals, classification, amendments, lock rejection, PDF returns a `%PDF` body.
+- Attachments: `POST/GET/DELETE /api/documents`, 10 MB cap, PDF/JPEG/PNG sniffing, private
+  streaming route, delete restricted to the owner, audited.
+- Screens: sales list, purchase list, shared document editor with live totals, print, attachments
+  panel (native file input plus a list).
+- Tests: totals, classification, amendments, lock rejection, PDF returns a `%PDF` body,
+  upload rejects oversize/wrong-type, delete removes the object.
 
 **Done when:** a sale and a purchase can be entered, edited, cancelled, amended and printed.
 
@@ -142,9 +150,12 @@ is usable.
 ## Phase 11 — Deployment and handover
 
 - Add `vercel.json` if needed; confirm Node runtime.
-- Neon project, pooled URL, `COOKIE_SECURE=true`, `APP_URL`.
+- Neon project, pooled and unpooled URLs, private `gst-documents` bucket.
+- Vercel environment: `DATABASE_URL`, `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`,
+  `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`, `COOKIE_SECURE=true`, `APP_URL`.
 - Run `db:push` and `db:seed` against Neon.
-- Deploy, create the owner, enter one real sale and one purchase, produce both returns.
+- Deploy, create the owner, enter one real sale and one purchase, attach a bill photo, produce both
+  returns.
 - README screenshots replaced with text steps; document backup and restore.
 - Tag `v1.0.0`.
 
@@ -178,4 +189,6 @@ is usable.
 | Neon cold starts / connection limits | Pooled connection string, singleton client, no per-request `new Pool` |
 | PDFKit fonts on Vercel | Bundle a TTF in the repo; do not rely on system fonts |
 | ExcelJS memory on large reports | Cap report ranges and stream exports; imports capped at 20k rows |
+| Object storage unreachable or credential rotated | Fail the upload with a clear 503, keep the metadata unwritten; read credentials from env at request time |
+| Large upload exhausts a serverless function | 10 MB cap enforced before buffering; reject early from `Content-Length` |
 | GST rate changes | Rates are data, editable in Settings; no hard-coded rate in logic |

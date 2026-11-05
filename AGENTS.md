@@ -9,7 +9,7 @@ A GST accounting application for one catering business. It records sales and pur
 ## Hard rules
 
 1. **No Python. No second service.** Everything is Next.js — pages and `/api` route handlers in the same project.
-2. **No uploaded files.** Documents are generated (PDF/XLSX/CSV/JSON) and streamed. There is no object storage and no `documents` table.
+2. **Documents are generated; uploads are optional.** Invoices, notes, returns and reports are rendered as PDF/XLSX/CSV/JSON and streamed. Uploaded bill photos and PDFs go to Neon Object Storage (S3-compatible) — never to the Vercel filesystem. Never commit secrets: real values live in `.env.local`.
 3. **No theming.** The UI is plain: white background, system font stack, black/grey text, simple bordered tables and forms. No custom palette, webfonts, illustrations, tour, glossary widget or animation. One stylesheet. Do not add a component library.
 4. **All money is integer paise** (`bigint` columns, `number` in code). Never use floats for money. Rates are integer basis points (5% = 500 bp). Round half-up per line tax component.
 5. **All GST computation is server-side.** The browser may call `POST /api/gst/calculate` for a live preview; it must never be the source of truth.
@@ -25,6 +25,7 @@ src/app/api/      route handlers, one folder per resource
 src/components/   plain shared UI (table, field, button, dialog)
 src/lib/          domain logic, framework-free and unit-testable
 src/lib/gst/      gst.ts, gstin.ts, periods.ts, returns.ts, recon.ts, importers.ts, reports.ts
+src/lib/storage.ts  Neon Object Storage (S3 client): put, get, delete
 src/db/           schema.ts, client.ts, seed.ts
 drizzle/          generated SQL migrations
 tests/            Vitest unit and integration tests
@@ -45,6 +46,27 @@ npm run db:generate  # drizzle-kit generate
 npm run db:push      # apply schema to DATABASE_URL
 npm run db:seed      # business defaults, rates, HSN
 ```
+
+## Environment and credentials
+
+Real values live in `.env.local`, which is git-ignored. Never copy secrets into a tracked file,
+a test fixture, a log line or a client bundle.
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | Neon pooled connection string (runtime) |
+| `DATABASE_URL_UNPOOLED` | Neon direct connection string (drizzle-kit push/generate) |
+| `AWS_ENDPOINT_URL_S3` | Neon Object Storage endpoint |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Neon storage credential |
+| `AWS_REGION` | `ap-southeast-1` |
+| `S3_BUCKET` | `gst-documents` (private) |
+| `APP_URL` | Public base URL, used in reset links |
+| `COOKIE_SECURE` | `true` on Vercel, `false` on localhost |
+| `SESSION_HOURS` | Session lifetime |
+
+The Neon project is `gst-invoice` (`long-sky-00413735`), branch `production`, region Singapore.
+Object storage is only reachable with the credential above; uploads are streamed through the app
+so the bucket stays private.
 
 ## Conventions
 

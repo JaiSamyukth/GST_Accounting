@@ -3,8 +3,8 @@
 Status: awaiting review. Date: 5 November 2026.
 
 Rebuild of `D:\Projects\GST_Accounting` (FastAPI + React/Vite + SQLite/Postgres) as a single
-Next.js application on Vercel with Neon Postgres. Behaviour is preserved; the stack, the
-storage of uploaded files and the visual treatment are not.
+Next.js application on Vercel with Neon Postgres and Neon Object Storage. Behaviour is preserved;
+the stack, where attachments live and the visual treatment are new.
 
 ---
 
@@ -32,6 +32,7 @@ Full feature parity with the old application, except where section 4 says otherw
 | ITC | GSTR-2B entries, matching, mismatches, missing rows, adjustments/reversals/reclaims |
 | Reports | All 12 reports with FY/month/quarter/date filters |
 | Export | PDF, XLSX, CSV, JSON for invoices, notes, returns and reports |
+| Attachments | Upload bill photos and supplier PDFs against a sale, purchase or return; list, download and delete them |
 | Import | CSV/XLSX for sales, notes, purchases, customers, suppliers, HSN, payments; mapping, preview, validation, error report, commit, undo |
 | Access | Owner/accountant roles, sessions, login history, password reset links, audit log |
 | Backup | Owner downloads every table as JSON in a ZIP |
@@ -50,7 +51,7 @@ Full feature parity with the old application, except where section 4 says otherw
 |---|---|
 | One Next.js project replaces FastAPI + Vite | Deploy to Vercel as one project; no separate backend host |
 | Neon Postgres only | Vercel-native; no SQLite fallback |
-| **No file uploads.** No `documents` table, no storage adapter | The owner asked for documents to be *generated* as PDF. Uploaded bill photos are out of scope |
+| **Uploads go to Neon Object Storage.** Private `gst-documents` bucket, no local disk | Invoices and reports stay generated on demand; bill photos and supplier PDFs need somewhere durable that survives a Vercel redeploy. Files are streamed through the app so the bucket stays private |
 | Plain UI: no order-book theme, webfonts, tour, guide widget, glossary, animation | Explicit request: "very very simple" |
 | Integer paise + basis points instead of Python `Decimal` | Exact money arithmetic in JavaScript without a decimal dependency |
 | Zod validation at every boundary | Replaces Pydantic |
@@ -68,15 +69,19 @@ Next.js on Vercel
    ├── app/ pages ............ server components for shells, client components for forms
    ├── app/api/* route handlers (Node.js runtime)
    ├── lib/* domain logic ..... framework-free, unit tested
+   ├── lib/storage.ts ........ S3 client for Neon Object Storage
    └── db/* Drizzle schema + client
-           |
-           v
-      Neon Postgres (pooled connection)
+           |                          |
+           v                          v
+   Neon Postgres (pooled)      Neon Object Storage (gst-documents, private)
 ```
 
-- Runtime: Node.js for all routes (PDFKit, ExcelJS and `postgres` need Node).
+- Runtime: Node.js for all routes (PDFKit, ExcelJS, `postgres` and the S3 client need Node).
 - No edge runtime.
 - No client-side GST truth: the editor calls `POST /api/gst/calculate` and renders the response.
+- The browser never talks to the bucket directly. Uploads and downloads pass through
+  `/api/documents`; the app checks the session first, then streams the object.
+- Uploads are capped at 10 MB and limited to PDF, JPEG and PNG.
 
 ## 6. Money and rates
 
@@ -113,12 +118,17 @@ All tables have `created_at`/`updated_at` where the old model did. IDs are `bigs
 | `gstr2b_entries` | period, supplier_gstin, supplier_name, doc_type, number, date, taxable_value, taxes, itc_available, reverse_charge |
 | `return_periods` | period unique, fy, gstr1/gstr3b status, ARNs and filed dates, approved_by/at, figures, snapshot jsonb, paid amounts, interest, late_fee, challan_ref, paid_on, locked, notes |
 | `import_batches` | kind, filename, schema_version, status, row counts, mapping jsonb, errors jsonb, created_ids jsonb, created_by, rolled_back_at |
+| `documents` | entity_type (`sale`/`purchase`/`return`/`party`), entity_id, kind (`bill_photo`/`supplier_pdf`/`acknowledgement`/`other`), filename, mime_type, size_bytes, object_key unique, checksum, uploaded_by, created_at |
 
 `qty` is stored as `numeric(14,3)` (fractional quantities are real, e.g. 2.5 kg).
 `unit_price` is `numeric(14,4)` (rate per unit). Both are converted to paise inside the engine
 with documented rounding.
 
-Indexes: dates, periods, doc numbers, party GSTIN, audit time, session token.
+Indexes: dates, periods, doc numbers, party GSTIN, audit time, session token,
+`documents (entity_type, entity_id)`, `documents object_key`.
+
+Object keys follow `{entity_type}/{entity_id}/{uuid}.{ext}`. The bucket is private; no row stores a
+public URL. Deleting a document row deletes the object, and the reverse never happens silently.
 
 ## 8. GST rules (must match the old engine)
 
@@ -200,6 +210,13 @@ PATCH  /api/itc/purchases/:id
 
 GET    /api/reports               GET /api/reports/:kind
 GET    /api/reports/:kind/export
+
+GET    /api/documents?entity_type=&entity_id=
+POST   /api/documents             (multipart: entity_type, entity_id, kind, file)
+GET    /api/documents/:id
+GET    /api/documents/:id/file
+DELETE /api/documents/:id
+
 GET    /api/imports/kinds
 GET    /api/imports/template/:kind.:fmt
 POST   /api/imports/preview
@@ -220,8 +237,10 @@ GET    /api/users/audit
 Rules:
 - JSON in, JSON out. Money is returned as integer paise; the UI formats it.
 - Mutations require the `X-Requested-With: fetch` header (CSRF guard) and a valid session cookie.
+  The document upload route uses `X-Requested-With: fetch` too and is `multipart/form-data`.
 - Errors are `{ "error": "..." }`; `422` for validation, `409` for conflicts/locks, `401/403` for access.
-- Exports stream bytes with `Content-Disposition`.
+- Exports and attachment downloads stream bytes with `Content-Disposition`; the bucket is never
+  exposed to the browser.
 
 ## 10. Screens and UI rules
 
@@ -241,15 +260,17 @@ Plain, utilitarian, and readable at 360 px.
 |---|---|
 | `/setup`, `/login`, `/reset` | Owner setup, sign in, reset password |
 | `/` | This month: counts, output tax, ITC, cash payable, due dates, previous period warning, recent activity |
-| `/sales`, `/sales/new`, `/sales/:id` | Sales list with filters and totals; invoice/note editor with live totals; print PDF |
-| `/purchases`, `/purchases/new`, `/purchases/:id` | Purchase list; bill editor with ITC per line |
+| `/sales`, `/sales/new`, `/sales/:id` | Sales list with filters and totals; invoice/note editor with live totals; print PDF; attachments panel |
+| `/purchases`, `/purchases/new`, `/purchases/:id` | Purchase list; bill editor with ITC per line; attachments panel |
 | `/returns`, `/returns/:period` | Period list; return workspace (steps, GSTR-1 sections, GSTR-3B tables, comparison, 2B summary, approve/file/pay/lock, downloads) |
 | `/reports` | Report picker, filters, table, export buttons |
 | `/import` | Kind picker, upload, column mapping, preview/errors, commit, history, undo |
 | `/parties` | Customers and suppliers |
 | `/settings` | Business, tax rates, HSN, users, audit log, backup |
 
-`/documents` and `/guide` are removed. Invoice and return PDFs are opened from the record.
+`/guide` is removed. Invoice and return PDFs are opened from the record. Attachments appear as a
+plain list on the sale/purchase editor: file name, size, uploaded date, a download link and a delete
+button. No drag-and-drop, no previews, no thumbnails — a native file input and a list.
 
 ## 11. Auth and security
 
@@ -261,7 +282,10 @@ Plain, utilitarian, and readable at 360 px.
 - Roles: only the owner edits business settings, users, unlock, lock, approve, backup.
 - Login throttling: 8 failures per email per 15 minutes.
 - Headers: `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `no-store` on `/api`.
-- Audit log for every create/update/delete/cancel/amend/approve/file/unlock/import/export.
+- Audit log for every create/update/delete/cancel/amend/approve/file/unlock/import/export,
+  and for every attachment upload or delete.
+- Uploaded files are checked by MIME type and extension, size (10 MB) and a PDF/JPEG/PNG magic-byte
+  sniff before being written; the original file name is stored as metadata only.
 - Secrets only in environment variables.
 
 ## 12. Imports
@@ -300,21 +324,41 @@ GSTR-1 payload keys: `gstin`, `fp`, `version`, `hash`, `b2b`, `b2ba`, `b2cl`, `b
 GSTR-3B payload keys: `gstin`, `ret_period`, `sup_details`, `inter_sup`, `itc_elg`, `inward_sup`,
 `intr_ltfee`.
 
+### 14.1 Attachments
+
+| Step | Behaviour |
+|---|---|
+| Upload | `POST /api/documents` with `multipart/form-data`; ≤ 10 MB; PDF, JPEG or PNG; magic bytes checked |
+| Store | `lib/storage.ts` puts the bytes in `gst-documents` under `{entity_type}/{entity_id}/{uuid}.{ext}`; the `documents` row records size and checksum |
+| List | `GET /api/documents?entity_type=sale&entity_id=…` returns metadata only |
+| Download | `GET /api/documents/:id/file` checks the session, fetches the object and streams it with the original file name |
+| Delete | `DELETE /api/documents/:id` (owner only) removes the row and the object, audited |
+| Missing object | The metadata row is kept and the UI says the file is unavailable; it is never silently recreated |
+
+Generated PDFs and reports are not written to the bucket. Only user-supplied attachments are.
+
 ## 15. Testing
 
 - **Unit (most of the suite):** GST engine, GSTIN checksum, periods/due dates, set-off order,
   GSTR-1 figures/sections, GSTR-3B tables, comparison, reconciliation, report rows, importer
   parsing and validation.
 - **Integration:** API flows with PGlite — setup/login, create sale, lock, amendment, cancel,
-  import preview/commit/rollback, role checks, export content types.
-- Fixtures: a business in Tamil Nadu (33), a B2B customer, a B2C customer, a supplier, a 2B file.
+  import preview/commit/rollback, role checks, export content types, document upload/list/delete
+  against a stubbed storage client.
+- Fixtures: a business in Tamil Nadu (33), a B2B customer, a B2C customer, a supplier, a 2B file,
+  a one-page PDF and a small JPEG.
 - Target: every old Python test has a TypeScript equivalent, plus tests for the four defects in
   `AGENTS.md`.
 
 ## 16. Deployment
 
 - Vercel project, standard Next.js build (`npm run build`).
-- `DATABASE_URL` = Neon pooled string. `COOKIE_SECURE=true`, `APP_URL=https://…`.
+- Environment: `DATABASE_URL` (Neon pooled), `DATABASE_URL_UNPOOLED` (drizzle-kit only),
+  `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`,
+  `S3_BUCKET=gst-documents`, `COOKIE_SECURE=true`, `APP_URL=https://…`.
+- Neon project `gst-invoice`, branch `production`, region Singapore; private bucket
+  `gst-documents`. Credentials are generated in the Neon console and stored only in Vercel and
+  `.env.local`.
 - Schema applied with `npm run db:push` (or generated migrations with `db:generate` and applied
   through a one-off job). Seed defaults idempotently on first boot.
 - No server filesystem writes. No long-running processes. No cron required.
@@ -340,5 +384,6 @@ Every item below must be demonstrable before the rebuild is called done.
 - [ ] All 12 reports with filters and four export formats
 - [ ] Bulk import of seven kinds with preview, error CSV, commit, undo
 - [ ] Invoice/note PDF and return/report PDF
+- [ ] Attach, list, download and delete a bill photo or supplier PDF in Neon Object Storage
 - [ ] Audit log and full JSON backup
 - [ ] Typecheck, lint, tests, production build green
