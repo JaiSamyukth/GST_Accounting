@@ -1,6 +1,6 @@
 # GST-Invoice — design specification
 
-Status: awaiting review. Date: 5 November 2026.
+Status: first implementation landed (see section 18). Date: 7 November 2026.
 
 Rebuild of `D:\Projects\GST_Accounting` (FastAPI + React/Vite + SQLite/Postgres) as a single
 Next.js application on Vercel with Neon Postgres and Neon Object Storage. Behaviour is preserved;
@@ -387,3 +387,34 @@ Every item below must be demonstrable before the rebuild is called done.
 - [ ] Attach, list, download and delete a bill photo or supplier PDF in Neon Object Storage
 - [ ] Audit log and full JSON backup
 - [ ] Typecheck, lint, tests, production build green
+
+## 18. Implementation status and decisions (7 November 2026)
+
+Built and tested: setup/login/logout/sessions/reset links, roles and throttling, business settings,
+tax rates, HSN/SAC, parties, the GST engine and live preview, sales invoices and notes, purchases with
+per-line ITC, cancel, invoice PDF, attachments (Neon Object Storage), GSTR-1 and GSTR-3B figures and
+portal JSON, comparison, ITC adjustments, approve/file/pay/lock/unlock, 12 reports in PDF/XLSX/CSV/JSON,
+home dashboard, users, audit log and backup. Fixes for all four defects in `AGENTS.md` have tests.
+
+Not built yet (parity checklist items still open):
+
+- Bulk import wizard (section 12) and the `/import` screen.
+- GSTR-2B import, reconciliation and ITC deferral for bills missing in 2B.
+- Amendments (`b2ba`, `b2cla`, `cdnra`) and `POST /api/sales/:id/amend`. The payload keys are emitted empty.
+
+Decisions made while building:
+
+- **Quarter keys.** In `YYYY-Qn`, `YYYY` is the financial-year start year: `2026-Q4` is Jan–Mar 2027.
+- **ITC in table 4.** Lines blocked under section 17(5) (by purchase category) appear in 4A and are
+  reversed in 4B(1). Lines that were never claimable — unregistered supplier, business on the 5%
+  no-ITC scheme, or manually marked ineligible — are not reported in table 4 at all.
+- **Reclaims** are added to 4A(5) and also shown in 4D(1).
+- **Late fee** is split equally between CGST and SGST in the 3B payload; interest is recorded on the
+  period but not split by head.
+- **Purchase ITC period** defaults to the bill's own period and cannot be earlier than the bill date.
+  Every ITC change checks the lock on the bill's period and on both the old and new ITC periods.
+- **Unlock** returns filed returns to `approved`, clears ARNs and filed dates, removes the snapshot
+  from the period row and keeps it in the audit log entry.
+- **Local development** may set `DATABASE_URL="pglite:./.data/pglite"` to run an embedded Postgres that
+  migrates itself. Production uses Neon. Apply migrations to Neon with `npm run db:migrate`.
+- Invoice PDFs print amounts as "Rs." because the built-in PDF font has no rupee glyph.
