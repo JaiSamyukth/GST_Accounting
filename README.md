@@ -4,7 +4,7 @@ GST accounting for Dev Caters, Trichy — rebuilt as a single Next.js applicatio
 
 Record sales and purchase bills, check input tax credit against GSTR-2B, prepare GSTR-1 and GSTR-3B every month, and print or download the papers as PDF, Excel, CSV or JSON.
 
-> **Status: planning.** This repository currently contains the specification and implementation plan. Application code lands only after the spec and plan are approved.
+> **Status: working.** Every module below is built and tested. **New here? Follow [`docs/setup-guide.md`](docs/setup-guide.md)** for step-by-step setup on Neon and Vercel and for the monthly routine.
 
 ## What it is
 
@@ -44,15 +44,20 @@ Record sales and purchase bills, check input tax credit against GSTR-2B, prepare
 - Vitest + PGlite for tests
 - One hand-written stylesheet
 
-## Local setup (after implementation)
+## Local setup
 
 ```bash
 npm install
 cp .env.example .env.local     # set DATABASE_URL and the storage keys
-npm run db:push
-npm run db:seed
+npm run db:migrate             # apply drizzle/ migrations to Neon
 npm run dev
 ```
+
+No Neon at hand? Set `DATABASE_URL="pglite:./.data/pglite"` in `.env.local`: an embedded Postgres is
+created and migrated on first use. Attachments need the storage keys; without them uploads show
+"File storage is not configured" and everything else works.
+
+Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 
 Open http://localhost:3000. The first visit asks for the owner's account.
 
@@ -62,7 +67,7 @@ Open http://localhost:3000. The first visit asks for the owner's account.
 2. Create a private object storage bucket (the project uses `gst-documents`).
 3. Import this repository in Vercel and add `DATABASE_URL`, `DATABASE_URL_UNPOOLED`,
    `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`.
-4. Run `npm run db:push` once against Neon (locally or in the build step).
+4. Run `npm run db:migrate` against Neon (locally) before each deploy that changes the schema. Defaults are seeded when the owner account is created.
 5. Deploy.
 
 See `docs/spec.md` for the full design and `docs/plan.md` for the build plan.
