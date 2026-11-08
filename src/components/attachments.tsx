@@ -9,6 +9,22 @@ interface Doc { id: number; filename: string; sizeBytes: number; kind: string; c
 
 const KIND_LABEL: Record<string, string> = { bill_photo: "Bill photo", supplier_pdf: "Supplier PDF", acknowledgement: "Acknowledgement", other: "Other" };
 
+const LIMIT = 4 * 1024 * 1024; // src/lib/limits.ts
+
+/** Re-encode a large photo as a JPEG no wider/taller than 2000 px so it fits the upload limit. */
+async function shrinkImage(file: File): Promise<File> {
+  if (!file.type.startsWith("image/") || file.size <= LIMIT) return file;
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 2000 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, "image/jpeg", 0.82));
+  if (!blob) return file;
+  return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+}
+
 function size(n: number): string {
   return n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
 }
@@ -23,9 +39,15 @@ export function Attachments({ entityType, entityId, defaultKind = "bill_photo" }
   const fileRef = useRef<HTMLInputElement>(null);
 
   const upload = async () => {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return setErr("Choose a file first");
-    if (file.size > 10 * 1024 * 1024) return setErr("File is larger than 10 MB");
+    const chosen = fileRef.current?.files?.[0];
+    if (!chosen) return setErr("Choose a file first");
+    let file: File;
+    try {
+      file = await shrinkImage(chosen);
+    } catch {
+      file = chosen;
+    }
+    if (file.size > LIMIT) return setErr("File is larger than 4 MB. Large photos are shrunk automatically; for a PDF, save a smaller copy.");
     const form = new FormData();
     form.set("entity_type", entityType);
     form.set("entity_id", entityId);
@@ -74,7 +96,7 @@ export function Attachments({ entityType, entityId, defaultKind = "bill_photo" }
         </table></div>
       ) : null}
       <div className="filters">
-        <div className="field"><label>File (PDF, JPEG or PNG, up to 10 MB)<input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" /></label></div>
+        <div className="field"><label>File (PDF, JPEG or PNG, up to 4 MB; big photos are shrunk)<input ref={fileRef} type="file" accept="application/pdf,image/jpeg,image/png" /></label></div>
         <div className="field"><label>Kind<select value={kind} onChange={(e) => setKind(e.target.value)}>{meta.documentKinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k] ?? k}</option>)}</select></label></div>
         <button type="button" onClick={upload} disabled={busy}>{busy ? "Uploading…" : "Upload"}</button>
       </div>

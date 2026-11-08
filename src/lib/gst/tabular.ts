@@ -8,7 +8,7 @@ export interface RawTable {
 }
 
 export const MAX_ROWS = 20_000;
-export const MAX_BYTES = 20 * 1024 * 1024;
+export const MAX_BYTES = 4 * 1024 * 1024; // see src/lib/limits.ts
 
 export class TableError extends Error {}
 
@@ -36,7 +36,7 @@ function trimTable(all: string[][]): RawTable {
 }
 
 export async function readTable(bytes: Uint8Array, filename: string): Promise<RawTable> {
-  if (bytes.byteLength > MAX_BYTES) throw new TableError("The file is larger than 20 MB");
+  if (bytes.byteLength > MAX_BYTES) throw new TableError("The file is larger than 4 MB. Split it into smaller files.");
   const ext = (filename.split(".").pop() ?? "").toLowerCase();
   if (ext === "csv" || ext === "txt") {
     let text = new TextDecoder("utf-8").decode(bytes);

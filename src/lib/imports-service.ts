@@ -1,14 +1,15 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db, Tx } from "../db/client";
 import { hsnCodes, importBatches, parties, purchases, returnPeriods, salesDocs } from "../db/schema";
 import { audit } from "./audit";
 import type { SessionUser } from "./auth";
 import { insertPurchase, insertSale } from "./docs";
 import { toCsv } from "./export/csv";
-import { autoMap, KINDS, validateTable, type ImportKind, type Mapping, type RowError } from "./gst/importers";
+import { autoMap, KINDS, validateTable, type Grouped, type ImportKind, type Mapping, type RowError } from "./gst/importers";
 import { periodOf } from "./gst/periods";
 import { readTable, TableError, type RawTable } from "./gst/tabular";
 import { conflict, notFound, unprocessable } from "./http";
+import { MAX_FILE_BYTES, MAX_FILE_LABEL } from "./limits";
 import { assertUnlocked } from "./locks";
 import { ensurePeriod } from "./returns-service";
 import { getBusiness } from "./settings";
@@ -25,7 +26,14 @@ export async function loadTable(bytes: Uint8Array, filename: string): Promise<Ra
 }
 
 /** Validate the file and check it against the database. Writes nothing. */
-export async function analyse(db: Tx, kind: ImportKind, table: RawTable, mappingIn?: Mapping) {
+export type Analysed = Grouped & { updateId?: number };
+
+/**
+ * Validate the file and check it against the database. Writes nothing.
+ * With `update`, customers/suppliers (matched by name) and HSN codes (by code) that already
+ * exist are updated instead of being rejected as duplicates.
+ */
+export async function analyse(db: Tx, kind: ImportKind, table: RawTable, mappingIn?: Mapping, opts: { update?: boolean } = {}) {
   const biz = await getBusiness(db);
   const mapping = { ...autoMap(kind, table.headers), ...(mappingIn ?? {}) };
   const v = validateTable(kind, table, mapping, { businessState: biz.stateCode });
@@ -34,8 +42,9 @@ export async function analyse(db: Tx, kind: ImportKind, table: RawTable, mapping
 
   // Database checks: duplicates and locked periods.
   const locked = new Set((await db.select({ p: returnPeriods.period }).from(returnPeriods).where(eq(returnPeriods.locked, true))).map((r) => r.p));
-  const ok = [];
+  const ok: Analysed[] = [];
   for (const g of v.records) {
+    let updateId: number | undefined;
     const r = g.record;
     let bad: string | null = null;
     if (r.type === "sale") {
@@ -45,14 +54,18 @@ export async function analyse(db: Tx, kind: ImportKind, table: RawTable, mapping
       if (locked.has(periodOf(r.input.date, biz.filingFrequency))) bad = `Period ${periodOf(r.input.date, biz.filingFrequency)} is locked`;
       else if ((await db.select({ id: purchases.id }).from(purchases).where(and(eq(purchases.supplierGstin, r.input.supplierGstin), eq(purchases.supplierName, r.input.supplierName), eq(purchases.number, r.input.number), eq(purchases.docType, r.input.docType))).limit(1)).length) bad = `Bill ${r.input.number} from ${r.input.supplierName} already exists`;
     } else if (r.type === "party") {
-      if ((await db.select({ id: parties.id }).from(parties).where(and(eq(parties.kind, r.input.kind), eq(parties.name, r.input.name), eq(parties.gstin, r.input.gstin))).limit(1)).length) bad = `${r.input.name} already exists`;
+      const hit = (await db.select({ id: parties.id }).from(parties).where(and(eq(parties.kind, r.input.kind), sql`lower(${parties.name}) = ${r.input.name.toLowerCase()}`)).limit(1))[0];
+      if (hit && opts.update) updateId = hit.id;
+      else if (hit) bad = `${r.input.name} already exists (tick "Update existing" to change it)`;
     } else if (r.type === "hsn") {
-      if ((await db.select({ id: hsnCodes.id }).from(hsnCodes).where(eq(hsnCodes.code, r.input.code)).limit(1)).length) bad = `Code ${r.input.code} already exists`;
+      const hit = (await db.select({ id: hsnCodes.id }).from(hsnCodes).where(eq(hsnCodes.code, r.input.code)).limit(1))[0];
+      if (hit && opts.update) updateId = hit.id;
+      else if (hit) bad = `Code ${r.input.code} already exists (tick "Update existing" to change it)`;
     } else if (r.type === "payment") {
       if (locked.has(r.input.period)) bad = `Period ${r.input.period} is locked`;
     }
     if (bad) reject(g.rows, bad);
-    else ok.push(g);
+    else ok.push(updateId ? { ...g, updateId, label: `${g.label} (update)` } : g);
   }
   const errors = [...v.errors, ...extra].sort((a, b) => a.row - b.row);
   const errorRows = new Set(errors.map((e) => e.row));
@@ -73,6 +86,7 @@ export function previewResponse(kind: ImportKind, a: Awaited<ReturnType<typeof a
     fileErrors: a.errors.filter((e) => e.row === 1).map((e) => e.message),
     documents: a.records.map((g) => ({ label: g.label, rows: g.rows })).slice(0, PREVIEW_ROWS),
     documentCount: a.records.length,
+    updateCount: a.records.filter((g) => g.updateId).length,
     rows: a.table.rows.slice(0, PREVIEW_ROWS).map((cells, i) => ({ row: i + 2, cells, errors: errByRow.get(i + 2) ?? [] })),
   };
 }
@@ -93,6 +107,8 @@ interface CreatedIds {
   purchases: number[];
   parties: number[];
   hsn: number[];
+  /** Existing customers/suppliers/HSN codes changed by the import, with their previous values. */
+  updated?: Array<{ table: "parties" | "hsn"; id: number; before: Record<string, unknown> }>;
   payments: Array<{ period: string; before: Record<string, number | string | null> }>;
 }
 
@@ -106,12 +122,20 @@ export async function commitImport(db: Db, user: SessionUser, kind: ImportKind, 
       validRows: a.records.reduce((s, g) => s + g.rows.length, 0), errorRows: [...a.errorRows].filter((r) => r > 1).length,
       mapping: a.mapping, errors: a.errors.slice(0, 1000), createdBy: user.id,
     }).returning();
-    const created: CreatedIds = { sales: [], purchases: [], parties: [], hsn: [], payments: [] };
+    const created: CreatedIds = { sales: [], purchases: [], parties: [], hsn: [], payments: [], updated: [] };
     for (const g of a.records) {
       const r = g.record;
       if (r.type === "sale") created.sales.push((await insertSale(tx, user, r.input, { importBatchId: batch.id })).id);
       else if (r.type === "purchase") created.purchases.push((await insertPurchase(tx, user, r.input, batch.id)).id);
-      else if (r.type === "party") created.parties.push((await tx.insert(parties).values(r.input).returning({ id: parties.id }))[0].id);
+      else if (r.type === "party" && g.updateId) {
+        const before = (await tx.select().from(parties).where(eq(parties.id, g.updateId)))[0];
+        await tx.update(parties).set({ ...r.input, updatedAt: new Date() }).where(eq(parties.id, g.updateId));
+        created.updated!.push({ table: "parties", id: g.updateId, before });
+      } else if (r.type === "hsn" && g.updateId) {
+        const before = (await tx.select().from(hsnCodes).where(eq(hsnCodes.id, g.updateId)))[0];
+        await tx.update(hsnCodes).set(r.input).where(eq(hsnCodes.id, g.updateId));
+        created.updated!.push({ table: "hsn", id: g.updateId, before });
+      } else if (r.type === "party") created.parties.push((await tx.insert(parties).values(r.input).returning({ id: parties.id }))[0].id);
       else if (r.type === "hsn") created.hsn.push((await tx.insert(hsnCodes).values(r.input).returning({ id: hsnCodes.id }))[0].id);
       else {
         const before = await ensurePeriod(tx, r.input.period);
@@ -164,6 +188,13 @@ export async function rollbackImport(db: Db, user: SessionUser, id: number) {
       await tx.delete(parties).where(inArray(parties.id, c.parties));
     }
     if (c.hsn.length) await tx.delete(hsnCodes).where(inArray(hsnCodes.id, c.hsn));
+    for (const u of c.updated ?? []) {
+      // JSON turned timestamps into strings; leave created/updated times alone.
+      const { id: _id, createdAt: _c, updatedAt: _u, ...values } = u.before as Record<string, unknown>;
+      void _id; void _c; void _u;
+      if (u.table === "parties") await tx.update(parties).set({ ...(values as Partial<typeof parties.$inferInsert>), updatedAt: new Date() }).where(eq(parties.id, u.id));
+      else await tx.update(hsnCodes).set(values as Partial<typeof hsnCodes.$inferInsert>).where(eq(hsnCodes.id, u.id));
+    }
     if (c.payments.length) {
       await assertUnlocked(tx, biz.filingFrequency, { periods: c.payments.map((p) => p.period) });
       for (const p of c.payments) {
@@ -180,7 +211,7 @@ export async function rollbackImport(db: Db, user: SessionUser, id: number) {
 /** Read the multipart body shared by preview, error-report and commit. */
 export async function readImportForm(req: Request) {
   const len = Number(req.headers.get("content-length") ?? 0);
-  if (len > 21 * 1024 * 1024) throw unprocessable("The file is larger than 20 MB");
+  if (len > MAX_FILE_BYTES + 64 * 1024) throw unprocessable(`The file is larger than ${MAX_FILE_LABEL}. Split it into smaller files.`);
   let form: FormData;
   try {
     form = await req.formData();
@@ -204,5 +235,5 @@ export async function readImportForm(req: Request) {
     }
   }
   const table = await loadTable(new Uint8Array(await file.arrayBuffer()), file.name);
-  return { kind: kind as ImportKind, filename: file.name, table, mapping };
+  return { kind: kind as ImportKind, filename: file.name, table, mapping, update: form.get("update") === "1" };
 }

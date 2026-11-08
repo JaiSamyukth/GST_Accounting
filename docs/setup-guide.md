@@ -190,9 +190,11 @@ The repository's `vercel.json` runs the app in Singapore, next to the Neon datab
 - If the owner truly needs to reopen a filed month: Returns → month → **Unlock period** (asks for a reason,
   recorded in the audit log). The returns go back to *approved* and the ARNs are cleared.
 
-## Part G — Importing from Excel
+## Part G — Importing and exporting with Excel
 
-**Import** in the top menu.
+**Import / export** in the top menu.
+
+**Import**
 
 1. Choose what you are importing (sales, credit/debit notes, purchases, customers, suppliers, HSN codes or tax payments).
 2. Download the **Excel template**, or use your own sheet. Column names like "Invoice No" or "GST %" are recognised.
@@ -201,6 +203,25 @@ The repository's `vercel.json` runs the app in Singapore, next to the Neon datab
    problems. Fix the problems in your sheet (or **Download error report**), or change which column means what, then check again.
 4. Click **Import**. Rows with errors are skipped.
 5. Made a mistake? **Past imports → Undo** removes exactly what that import created, unless its month is locked.
+6. Files can be up to **4 MB** (that is tens of thousands of rows). Split bigger sheets into several files.
+
+**Export**
+
+1. In the **Export** box choose what (sales, notes, purchases, customers, suppliers, HSN codes or payments)
+   and, for dated data, a financial year or a month.
+2. Click **Excel** or **CSV**. The file has exactly the import template's columns.
+3. Uses: give the accountant your sales in Excel; fix many customers at once; move data to another installation.
+
+**Editing customers, suppliers or HSN codes in bulk**
+
+1. Export customers (or suppliers, or HSN codes) to Excel.
+2. Change phone numbers, GSTINs, addresses or rates in Excel. Do not change the names (they are how rows are matched;
+   HSN rows are matched by code).
+3. Import the file with **Update existing … instead of skipping them** ticked. The check shows how many rows are updates.
+4. **Undo** puts back the previous values.
+
+Exported sales and purchases are for records or for moving to a *new* installation: importing them into the same
+installation reports every number as "already exists", which is what you want.
 
 ## Part H — Users, backup and safety
 
@@ -208,6 +229,15 @@ The repository's `vercel.json` runs the app in Singapore, next to the Neon datab
   **Accountant** can enter and check everything else.
 - **Settings → Backup → Download backup** gives a ZIP of every table. Do it monthly after filing and keep it somewhere safe.
   Neon also keeps its own history (see Neon's "Restore" / branching features).
+- **Restoring a backup** (moving to a new Neon database, or after losing one):
+  1. Create the new database and set the app up on it (Parts A, C and D). Use the **same storage bucket** settings as before,
+     so attached bill photos are found again.
+  2. Open the app, create the owner account, then go to **Settings → Backup → Restore**, choose the ZIP and click **Restore backup**.
+  3. Everything comes back: settings, parties, sales, purchases, returns with their ARNs and locks, imports, the audit log.
+     User accounts are not in the backup: add your accountant again under Settings → Users.
+  Restore only runs on an installation with no sales, purchases, parties or returns yet, so it can never overwrite real work.
+  A backup over 4 MB is restored from your computer instead: `npm run backup:restore -- gst-backup-….zip`
+  (with `.env.local` pointing at the new database).
 - Every change is in **Settings → Audit log**.
 - Forgot the owner password? Another owner can make a reset link under **Settings → Users**. If you are the only
   owner, run this on the computer where you did Part C (it uses `.env.local`) and open the link it prints:
@@ -235,6 +265,7 @@ Always run `db:migrate` **before** the new version goes live.
 | Signed out straight after signing in on the live site | `COOKIE_SECURE` must be `true` on Vercel (https) and `false` on `localhost`. |
 | Reset links point to localhost | Set `APP_URL` in Vercel to your real address and redeploy. |
 | "Period … is locked" | That month is filed. Amend (sales), adjust in the current month, or have the owner unlock it with a reason. |
+| "File is larger than 4 MB" | Vercel accepts at most about 4.5 MB per upload. Photos are shrunk automatically; for a big PDF, save or scan a smaller copy. Split large import sheets. |
 | "Too many failed attempts" | 8 wrong passwords in 15 minutes. Wait 15 minutes. |
 | First page load is slow after a quiet night | Neon's free plan pauses the database when idle; the first request wakes it (a few seconds). |
 

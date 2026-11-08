@@ -425,6 +425,19 @@ Decisions made while building:
   records exactly what it created. Undo deletes those records (payments: restores the previous values) and refuses
   when a period involved is locked or a document has since been amended. `.xls` is not supported (save as `.xlsx`).
   Percentages are always read as percent (`0.25` = 0.25%).
+- **Export.** `GET /api/exports/{kind}.{csv|xlsx}` with `fy`, `period` or `from`/`to` writes the import template's columns
+  for every import kind. Cancelled documents are left out; an amended document is exported as its latest version under
+  its portal number. Exported files import back cleanly (tested: export → import into a fresh installation gives
+  identical GSTR-1 and GSTR-3B JSON).
+- **Update existing on import.** With `update=1`, customers/suppliers matched by name (case-insensitive) and HSN codes
+  matched by code are updated instead of rejected; the batch keeps their previous values and Undo restores them.
+- **Restore.** `POST /api/backup/restore` (owner) loads a backup ZIP into an installation with no business data,
+  replacing settings, rates, HSN codes and the audit log, keeping ids and resetting sequences. User accounts are never
+  restored. The backup now carries `manifest.json` (`app`, `version`, counts). `npm run backup:restore -- <zip>` does
+  the same from the command line.
+- **Upload size.** Vercel functions refuse request bodies over about 4.5 MB, so every upload (attachments, imports,
+  GSTR-2B, restore) is capped at **4 MB** (`src/lib/limits.ts`), down from the 10/20 MB in sections 5, 12 and 14.1.
+  The browser shrinks photos over 4 MB to at most 2000 px JPEG before uploading.
 - **Local development** may set `DATABASE_URL="pglite:./.data/pglite"` to run an embedded Postgres that
   migrates itself. Production uses Neon. Apply migrations with `npm run db:migrate`.
 - `npm run user:reset-link -- <email>` prints a reset link from the command line (owner recovery).

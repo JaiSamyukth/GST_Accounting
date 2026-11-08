@@ -4,6 +4,7 @@ import { parse2bFile, TwoBError } from "@/lib/gst/gstr2b";
 import { isPeriodKey } from "@/lib/gst/periods";
 import { json, unprocessable } from "@/lib/http";
 import { import2b } from "@/lib/itc-service";
+import { MAX_FILE_BYTES, MAX_FILE_LABEL } from "@/lib/limits";
 import { route } from "@/lib/route";
 
 export const GET = route({}, async ({ req, db }) => {
@@ -14,7 +15,7 @@ export const GET = route({}, async ({ req, db }) => {
 
 /** multipart: period, file (portal JSON/ZIP, or CSV/XLSX). Replaces the period's 2B rows. */
 export const POST = route({}, async ({ req, db, user }) => {
-  if (Number(req.headers.get("content-length") ?? 0) > 21 * 1024 * 1024) throw unprocessable("The file is larger than 20 MB");
+  if (Number(req.headers.get("content-length") ?? 0) > MAX_FILE_BYTES + 64 * 1024) throw unprocessable(`The file is larger than ${MAX_FILE_LABEL}`);
   let form: FormData;
   try {
     form = await req.formData();

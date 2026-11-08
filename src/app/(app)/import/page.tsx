@@ -2,16 +2,53 @@
 
 import { useRef, useState } from "react";
 import { api, errorText } from "@/components/api";
-import { Err, Field, Loading, Ok, useLoad } from "@/components/ui";
+import { useApp } from "@/components/shell";
+import { Err, Field, Loading, Ok, qs, useLoad } from "@/components/ui";
+import { fyLabel } from "@/lib/gst/periods";
 
 interface FieldDef { key: string; label: string; required?: boolean }
 interface Kind { kind: string; label: string; fields: FieldDef[] }
 interface Preview {
   kind: string; fields: FieldDef[]; headers: string[]; mapping: Record<string, number>;
-  totalRows: number; validRows: number; errorRows: number; fileErrors: string[]; documentCount: number;
+  totalRows: number; validRows: number; errorRows: number; fileErrors: string[]; documentCount: number; updateCount: number;
   rows: Array<{ row: number; cells: string[]; errors: string[] }>;
 }
 interface Batch { id: number; kind: string; filename: string; status: string; totalRows: number; validRows: number; errorRows: number; createdAt: string }
+
+const UPDATABLE = ["customers", "suppliers", "hsn"];
+const DATED = ["sales", "notes", "purchases", "payments"];
+
+function ExportBox({ kinds }: { kinds: Kind[] }) {
+  const { meta } = useApp();
+  const [kind, setKind] = useState("sales");
+  const [mode, setMode] = useState<"fy" | "period">("fy");
+  const [fy, setFy] = useState(meta.fy.startYear);
+  const [period, setPeriod] = useState(meta.currentPeriod);
+  const q = DATED.includes(kind) ? qs(mode === "fy" ? { fy } : { period }) : "";
+  return (
+    <div className="box">
+      <h2 style={{ marginTop: 0 }}>Export</h2>
+      <p>Download your data in the same columns as the import templates. Edit it in Excel and import it back, or move it to another installation.</p>
+      <div className="filters">
+        <Field label="What">
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>{kinds.map((x) => <option key={x.kind} value={x.kind}>{x.label}</option>)}</select>
+        </Field>
+        {DATED.includes(kind) ? (
+          <>
+            <Field label="For"><select value={mode} onChange={(e) => setMode(e.target.value as "fy" | "period")}><option value="fy">A financial year</option><option value="period">A return period</option></select></Field>
+            {mode === "fy" ? (
+              <Field label="Financial year"><select value={fy} onChange={(e) => setFy(Number(e.target.value))}>{[meta.fy.startYear + 1, meta.fy.startYear, meta.fy.startYear - 1, meta.fy.startYear - 2].map((y) => <option key={y} value={y}>{fyLabel(y)}</option>)}</select></Field>
+            ) : (
+              <Field label="Period"><select value={period} onChange={(e) => setPeriod(e.target.value)}>{meta.periods.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</select></Field>
+            )}
+          </>
+        ) : null}
+        <p>Download: <a href={`/api/exports/${kind}.xlsx${q}`}>Excel</a> · <a href={`/api/exports/${kind}.csv${q}`}>CSV</a></p>
+      </div>
+      <p className="muted">Cancelled documents are left out; an amended invoice is exported as its latest version. For a complete copy of everything, use Settings → Backup.</p>
+    </div>
+  );
+}
 
 export default function ImportPage() {
   const kinds = useLoad<{ kinds: Kind[] }>("/api/imports/kinds");
@@ -23,6 +60,7 @@ export default function ImportPage() {
   const [ok, setOk] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [onlyErrors, setOnlyErrors] = useState(false);
+  const [update, setUpdate] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const form = (m: Record<string, number> | null) => {
@@ -32,6 +70,7 @@ export default function ImportPage() {
     f.set("kind", kind);
     f.set("file", file);
     if (m) f.set("mapping", JSON.stringify(m));
+    if (update && UPDATABLE.includes(kind)) f.set("update", "1");
     return f;
   };
 
@@ -100,7 +139,7 @@ export default function ImportPage() {
 
   return (
     <>
-      <h1>Import</h1>
+      <h1>Import and export</h1>
       <p>Bring in sales, notes, purchases, customers, suppliers, HSN codes or tax payments from a spreadsheet. Download a template, fill it in, then upload. Nothing is saved until you click Import.</p>
       <div className="filters">
         <Field label="What are you importing?">
@@ -116,9 +155,13 @@ export default function ImportPage() {
         <p className="muted">Column names need not match exactly; common names such as &quot;Invoice No&quot; or &quot;GST %&quot; are recognised. Items of one invoice go on separate rows with the same number.</p>
       </details>
       <div className="filters">
-        <div className="field"><label>File (.xlsx or .csv, up to 20,000 rows)<input ref={fileRef} type="file" accept=".csv,.xlsx" onChange={() => { setPreview(null); setMapping(null); }} /></label></div>
+        <div className="field"><label>File (.xlsx or .csv, up to 4 MB / 20,000 rows)<input ref={fileRef} type="file" accept=".csv,.xlsx" onChange={() => { setPreview(null); setMapping(null); }} /></label></div>
         <button className="primary" disabled={busy} onClick={() => check(null)}>{busy ? "Checking…" : "Check file"}</button>
       </div>
+      {UPDATABLE.includes(kind) ? (
+        <label><input type="checkbox" checked={update} onChange={(e) => { setUpdate(e.target.checked); setPreview(null); }} />
+          Update existing {kind === "hsn" ? "codes (matched by code)" : `${kind} (matched by name)`} instead of skipping them</label>
+      ) : null}
       <Err error={error} />
       <Ok message={ok} />
 
@@ -127,7 +170,7 @@ export default function ImportPage() {
           <h2>Check</h2>
           {preview.fileErrors.map((e) => <div key={e} className="error">{e}</div>)}
           <p>
-            {preview.totalRows} row(s): <b>{preview.validRows} ready</b> ({preview.documentCount} record(s)), <b>{preview.errorRows} with errors</b>.
+            {preview.totalRows} row(s): <b>{preview.validRows} ready</b> ({preview.documentCount} record(s){preview.updateCount ? `, ${preview.updateCount} of them updates` : ""}), <b>{preview.errorRows} with errors</b>.
           </p>
           <h3>Columns</h3>
           <div className="table-wrap"><table>
@@ -161,6 +204,8 @@ export default function ImportPage() {
           </table></div>
         </>
       ) : null}
+
+      <ExportBox kinds={kinds.data.kinds} />
 
       <h2>Past imports</h2>
       {history.data && history.data.batches.length ? (

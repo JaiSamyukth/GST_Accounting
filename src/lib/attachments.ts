@@ -7,7 +7,8 @@ import type { SessionUser } from "./auth";
 import { HttpError, notFound, unprocessable } from "./http";
 import { getStorage, StorageUnavailableError } from "./storage";
 
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+export { MAX_FILE_BYTES as MAX_UPLOAD_BYTES } from "./limits";
+import { MAX_FILE_BYTES, MAX_FILE_LABEL } from "./limits";
 export const ENTITY_TYPES = ["sale", "purchase", "return", "party"] as const;
 export const DOC_KINDS = ["bill_photo", "supplier_pdf", "acknowledgement", "other"] as const;
 export type EntityType = (typeof ENTITY_TYPES)[number];
@@ -55,7 +56,7 @@ export async function uploadDocument(
   input: { entityType: EntityType; entityId: string; kind: DocKind; filename: string; mime: string; bytes: Uint8Array },
 ) {
   if (input.bytes.byteLength === 0) throw unprocessable("The file is empty");
-  if (input.bytes.byteLength > MAX_UPLOAD_BYTES) throw new HttpError(413, "File is larger than 10 MB");
+  if (input.bytes.byteLength > MAX_FILE_BYTES) throw new HttpError(413, `File is larger than ${MAX_FILE_LABEL}`);
   const t = sniff(input.filename, input.mime, input.bytes);
   await assertEntity(db, input.entityType, input.entityId);
   const key = `${input.entityType}/${input.entityId}/${randomUUID()}.${t.ext}`;

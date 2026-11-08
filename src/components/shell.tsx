@@ -31,7 +31,7 @@ export function useApp() {
 
 const NAV = [
   ["/", "This month"], ["/sales", "Sales"], ["/purchases", "Purchases"], ["/returns", "Returns"],
-  ["/reports", "Reports"], ["/import", "Import"], ["/parties", "Parties"], ["/settings", "Settings"],
+  ["/reports", "Reports"], ["/import", "Import / export"], ["/parties", "Parties"], ["/settings", "Settings"],
 ] as const;
 
 export function Shell({ children }: { children: React.ReactNode }) {

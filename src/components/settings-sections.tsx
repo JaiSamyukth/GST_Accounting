@@ -239,3 +239,27 @@ export function LogSection() {
     </>
   );
 }
+
+export function RestoreSection() {
+  const a = useAction();
+  const [busy, setBusy] = useState(false);
+  return (
+    <form className="filters" onSubmit={async (e) => {
+      e.preventDefault();
+      const input = (e.currentTarget.elements.namedItem("backup") as HTMLInputElement);
+      const file = input.files?.[0];
+      if (!file) return a.run(async () => { throw new Error("Choose the backup ZIP first"); }, "");
+      if (!confirm("Restore this backup? Settings, tax rates, HSN codes and the audit log here will be replaced by the backup's.")) return;
+      const form = new FormData();
+      form.set("file", file);
+      setBusy(true);
+      const done = await a.run(() => api("/api/backup/restore", { form }), "Backup restored. Reloading…");
+      setBusy(false);
+      if (done) setTimeout(() => window.location.reload(), 1200);
+    }}>
+      <div className="field"><label>Backup ZIP<input name="backup" type="file" accept=".zip,application/zip" /></label></div>
+      <button disabled={busy}>{busy ? "Restoring…" : "Restore backup"}</button>
+      <Err error={a.error} /><Ok message={a.ok} />
+    </form>
+  );
+}
