@@ -137,3 +137,23 @@ describe("setOff", () => {
     expect(r.carryForward.cgst).toBe(2000);
   });
 });
+
+describe("amendments", () => {
+  // Filed in October: B2B invoice ₹1,00,000 at 5%. Amended in November to ₹1,20,000.
+  const previous = sale({ section: "b2b", partyGstin: B2B, number: "INV-0001", date: "2026-10-05", lines: lines(100000, 500, true) });
+  const revised = sale({ section: "b2b", partyGstin: B2B, number: "INV-0001~A", date: "2026-10-05", lines: lines(120000, 500, true) });
+  const a1 = buildGstr1({ gstin: "33X", fp: "112026", businessState: STATE, sales: [], issued: [], amendments: [{ revised, previous }] });
+  const a3 = buildGstr3b({ gstin: "33X", fp: "112026", businessState: STATE, sales: [], amendments: [{ revised, previous }], purchasesByDate: [], purchasesByItc: [], adjustments: [], interest: 0, lateFee: 0 });
+
+  it("GSTR-1 reports the full revised invoice in b2ba under the portal number", () => {
+    expect(a1.summary.b2ba).toEqual({ count: 1, tax: { txval: 12000000, iamt: 0, camt: 300000, samt: 300000, csamt: 0 } });
+    const p = a1.payload as { b2ba: Array<{ ctin: string; inv: Array<Record<string, unknown>> }> };
+    expect(p.b2ba[0].ctin).toBe(B2B);
+    expect(p.b2ba[0].inv[0]).toMatchObject({ oinum: "INV-0001", oidt: "05-10-2026", inum: "INV-0001", val: 126000 });
+  });
+
+  it("GSTR-3B takes only the difference, and the two agree", () => {
+    expect(a3.t31.a).toEqual({ txval: 2000000, iamt: 0, camt: 50000, samt: 50000, csamt: 0 });
+    expect(compare1vs3b(a1, a3).every((r) => r.difference === 0)).toBe(true);
+  });
+});

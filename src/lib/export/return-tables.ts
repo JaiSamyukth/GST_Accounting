@@ -24,6 +24,9 @@ export const SECTION_LABELS: Record<string, string> = {
   exp: "Exports (6A)",
   cdnr: "Credit/debit notes – registered (9B)",
   cdnur: "Credit/debit notes – unregistered (9B)",
+  b2ba: "Amended B2B invoices (9A)",
+  b2cla: "Amended B2C large invoices (9A)",
+  cdnra: "Amended credit/debit notes – registered (9C)",
 };
 
 export function gstr1Tables(g: Gstr1Result): Table[] {
@@ -36,7 +39,7 @@ export function gstr1Tables(g: Gstr1Result): Table[] {
     { key: "gstin", label: "GSTIN" }, { key: "pos", label: "Place of supply" }, { key: "noteType", label: "Note" },
     { key: "rateBp", label: "Rate", type: "bp" }, ...TAX_COLS,
   ];
-  for (const s of ["b2b", "b2cl", "exp", "cdnr", "cdnur"]) {
+  for (const s of ["b2b", "b2cl", "exp", "cdnr", "cdnur", "b2ba", "b2cla", "cdnra"]) {
     const rows = g.rows.filter((r) => r.section === s).map(({ tax, ...r }) => ({ ...r, pos: pos(r.pos), ...tax }));
     if (rows.length) tables.push({ title: SECTION_LABELS[s], columns: docCols, rows, totals: totalsFor(docCols, rows) });
   }

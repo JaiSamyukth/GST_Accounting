@@ -17,7 +17,9 @@ export interface SaleDoc {
   partyAddress: string; placeOfSupply: string; reverseCharge: boolean; priceMode: "exclusive" | "inclusive"; notes: string;
   originalNumber: string; originalDate: string | null; noteReason: string; isExport: boolean; exportWithIgst: boolean;
   orderRef: string; status: string; section: string; grandTotal: number;
+  amendsId: number | null; amendedById: number | null; amendPeriod: string | null;
 }
+export interface SaleExisting { doc: SaleDoc; lines: SaleLine[]; period: string; locked: boolean; amendable: boolean }
 interface Party { id: number; name: string; gstin: string; address: string; stateCode: string }
 
 function fromLine(l: SaleLine): LineState {
@@ -28,7 +30,7 @@ function fromLine(l: SaleLine): LineState {
   };
 }
 
-export function SaleEditor({ existing, docType: newType }: { existing?: { doc: SaleDoc; lines: SaleLine[] }; docType?: DocType }) {
+export function SaleEditor({ existing, docType: newType }: { existing?: SaleExisting; docType?: DocType }) {
   const { meta } = useApp();
   const router = useRouter();
   const d = existing?.doc;
@@ -46,6 +48,10 @@ export function SaleEditor({ existing, docType: newType }: { existing?: { doc: S
   const [ok, setOk] = useState<string | null>(() => (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("saved") ? "Saved." : null));
   const [busy, setBusy] = useState(false);
   const cancelled = d?.status === "cancelled";
+  const [amending, setAmending] = useState(false);
+  const [amendPeriod, setAmendPeriod] = useState(meta.currentPeriod);
+  const readOnly = cancelled || !!d?.amendedById || (!!existing?.locked && !amending);
+  const shownNumber = d ? d.number.replace(/~A\d*$/, "") : "";
 
   useEffect(() => {
     api<{ parties: Party[] }>("/api/parties?kind=customer&active=1").then((r) => setParties(r.parties)).catch(() => undefined);
@@ -69,8 +75,11 @@ export function SaleEditor({ existing, docType: newType }: { existing?: { doc: S
       partyGstin: f.isExport ? "" : f.partyGstin, lines: lines.map((l) => toPayloadLine(l, false)),
     };
     try {
-      if (d) {
-        await api(`/api/sales/${d.id}`, { method: "PUT", body });
+      if (d && amending) {
+        const r = await api<{ sale: { id: number } }>(`/api/sales/${d.id}/amend`, { body: { ...body, number: undefined, amendPeriod } });
+        window.location.assign(new URL(`/sales/${r.sale.id}?saved=1`, window.location.href));
+      } else if (d) {
+        await api(`/api/sales/${d.id}`, { method: "PUT", body: d.amendsId ? { ...body, number: undefined } : body });
         window.location.assign(new URL(`/sales/${d.id}?saved=1`, window.location.href));
       } else {
         const r = await api<{ sale: { id: number } }>("/api/sales", { body });
@@ -96,19 +105,44 @@ export function SaleEditor({ existing, docType: newType }: { existing?: { doc: S
 
   return (
     <>
-      <h1>{d ? `${DOC_LABEL[docType]} ${d.number}` : `New ${DOC_LABEL[docType].toLowerCase()}`}{cancelled ? " (cancelled)" : ""}</h1>
+      <h1>
+        {d ? `${DOC_LABEL[docType]} ${shownNumber}` : `New ${DOC_LABEL[docType].toLowerCase()}`}
+        {d?.amendsId ? " (amendment)" : ""}{cancelled ? " (cancelled)" : ""}
+      </h1>
       {d ? (
         <div className="actions">
           <a className="button" href={`/api/sales/${d.id}/pdf`} target="_blank" rel="noreferrer">Print / download PDF</a>
-          {!cancelled ? <button type="button" onClick={cancel}>Cancel document</button> : null}
+          {!cancelled && !existing?.locked && !d.amendedById ? <button type="button" onClick={cancel}>{d.amendsId ? "Withdraw amendment" : "Cancel document"}</button> : null}
+          {existing?.amendable && !amending ? <button type="button" onClick={() => setAmending(true)}>Amend</button> : null}
           <Link href="/sales">Back to sales</Link>
           <span className="muted">GSTR-1 section: {d.section.toUpperCase()}</span>
         </div>
       ) : null}
+      {d?.amendedById ? <div className="notice">This version was replaced by an <Link href={`/sales/${d.amendedById}`}>amendment</Link>. Changes go there.</div> : null}
+      {d?.amendsId ? <div className="notice">Amendment of the <Link href={`/sales/${d.amendsId}`}>earlier version</Link>, reported in {d.amendPeriod}. GSTR-1 shows it as amended; GSTR-3B takes only the difference.</div> : null}
+      {existing?.locked && !d?.amendedById && !amending ? (
+        <div className="notice">
+          Period {existing.period} is filed and locked, so this document cannot be edited.
+          {existing.amendable ? " To correct it, click Amend." : " Correct it with a credit or debit note."}
+        </div>
+      ) : null}
+      {amending ? (
+        <div className="box">
+          <p><b>Amending.</b> Change what was wrong below and save. The filed version stays as it was; the amendment is reported in the period you choose.</p>
+          <div className="filters">
+            <Field label="Report the amendment in">
+              <select value={amendPeriod} onChange={(e) => setAmendPeriod(e.target.value)}>
+                {meta.periods.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+              </select>
+            </Field>
+            <button type="button" onClick={() => setAmending(false)}>Stop amending</button>
+          </div>
+        </div>
+      ) : null}
       <form onSubmit={save}>
-        <fieldset disabled={cancelled}>
+        <fieldset disabled={readOnly}>
           <div className="grid">
-            <Field label="Number" hint={d ? undefined : "Suggested automatically; you may change it."}><input value={f.number} onChange={(e) => set("number", e.target.value)} maxLength={16} required /></Field>
+            <Field label="Number" hint={d ? undefined : "Suggested automatically; you may change it."}><input value={d?.amendsId || amending ? shownNumber : f.number} disabled={!!d?.amendsId || amending} onChange={(e) => set("number", e.target.value)} maxLength={16} required /></Field>
             <Field label="Date"><input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} required /></Field>
             <Field label="Prices are">
               <select value={f.priceMode} onChange={(e) => set("priceMode", e.target.value as "exclusive" | "inclusive")}>
@@ -144,13 +178,13 @@ export function SaleEditor({ existing, docType: newType }: { existing?: { doc: S
             </div>
           ) : null}
           <h2>Items</h2>
-          <LinesEditor lines={lines} setLines={setLines} disabled={cancelled}
+          <LinesEditor lines={lines} setLines={setLines} disabled={readOnly}
             context={{ placeOfSupply: f.placeOfSupply, priceMode: f.priceMode, isExport: f.isExport, exportWithIgst: f.exportWithIgst }} />
           <Field label="Notes (printed on the invoice)"><textarea value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
         </fieldset>
         <Err error={error} />
         <Ok message={ok} />
-        {!cancelled ? <div className="actions"><button className="primary" disabled={busy}>{busy ? "Saving…" : "Save"}</button></div> : null}
+        {!readOnly ? <div className="actions"><button className="primary" disabled={busy}>{busy ? "Saving…" : amending ? "Save amendment" : "Save"}</button></div> : null}
       </form>
       {d ? <Attachments entityType="sale" entityId={String(d.id)} /> : <p className="muted">Save first to attach bill photos or PDFs.</p>}
     </>

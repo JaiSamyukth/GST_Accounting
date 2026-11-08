@@ -5,6 +5,7 @@ import { use, useState } from "react";
 import { api, errorText } from "@/components/api";
 import { Attachments } from "@/components/attachments";
 import { DataTable } from "@/components/data-table";
+import { Gstr2bSection } from "@/components/gstr2b-section";
 import { useApp } from "@/components/shell";
 import { Err, Field, Loading, Money, Ok, rupeesInput, useLoad } from "@/components/ui";
 import { gstr1Tables, gstr3bTables } from "@/lib/export/return-tables";
@@ -126,6 +127,9 @@ export default function ReturnWorkspace({ params }: { params: Promise<{ period: 
       </div>
       {tab === "gstr1" ? (g1.data ? gstr1Tables(g1.data).map((t) => <DataTable key={t.title} table={t} />) : <Err error={g1.error} />) : null}
       {tab === "gstr3b" ? (g3.data ? gstr3bTables(g3.data).map((t) => <DataTable key={t.title} table={t} />) : <Err error={g3.error} />) : null}
+
+      <h2>GSTR-2B matching</h2>
+      <Gstr2bSection period={period} locked={s.locked} onChange={reloadAll} />
 
       <h2>ITC reversals and reclaims</h2>
       {adj.data && adj.data.adjustments.length ? (

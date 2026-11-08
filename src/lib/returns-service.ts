@@ -3,10 +3,11 @@ import type { Db, Tx } from "../db/client";
 import { itcAdjustments, purchaseLines, purchases, returnPeriods } from "../db/schema";
 import { audit } from "./audit";
 import type { SessionUser } from "./auth";
-import { allSalesNumbersForRange, purchasesForItcPeriod, salesForRange } from "./docs";
+import { allSalesNumbersForRange, amendmentsForPeriod, purchasesForItcPeriod, salesForRange } from "./docs";
 import { dueDates, periodRange, periodsForFy, todayIso } from "./gst/periods";
 import { buildGstr1, buildGstr3b, compare1vs3b, type Gstr1Result, type Gstr3bResult, type RPurchase, type RSale } from "./gst/returns";
 import { conflict, unprocessable } from "./http";
+import { reconFor } from "./itc-service";
 import { getBusiness } from "./settings";
 
 export type ReturnPeriod = typeof returnPeriods.$inferSelect;
@@ -35,21 +36,26 @@ export interface Computed {
   gstr3b: Gstr3bResult;
   compare: ReturnType<typeof compare1vs3b>;
   issues: string[];
+  deferredBills: number[];
 }
 
 export async function computeReturns(db: Tx, key: string): Promise<Computed> {
   const biz = await getBusiness(db);
   const r = periodRange(key);
   const row = await ensurePeriod(db, key);
-  const s = await salesForRange(db, r.from, r.to);
-  const sales: RSale[] = s.docs.map((d) => ({ ...d, lines: s.lines.filter((l) => l.docId === d.id) }));
+  const sales: RSale[] = await salesForRange(db, r.from, r.to);
+  const amendments = await amendmentsForPeriod(db, key);
   const issued = await allSalesNumbersForRange(db, r.from, r.to);
-  const gstr1 = buildGstr1({ gstin: biz.gstin, fp: r.fp, businessState: biz.stateCode, sales, issued });
+  const gstr1 = buildGstr1({ gstin: biz.gstin, fp: r.fp, businessState: biz.stateCode, sales, issued, amendments });
   const adjustments = await db.select().from(itcAdjustments).where(eq(itcAdjustments.period, key));
+  // With GSTR-2B loaded, bills it does not show are deferred: their ITC is not claimed this period.
+  const recon = await reconFor(db, key);
+  const deferred = new Set(recon.rows.filter((x) => x.status === "missing_in_2b" && x.book).map((x) => x.book!.id));
+  const itcBills = toRPurchases(await purchasesForItcPeriod(db, key)).filter((p) => !deferred.has(p.id));
   const gstr3b = buildGstr3b({
-    gstin: biz.gstin, fp: r.fp, businessState: biz.stateCode, sales,
+    gstin: biz.gstin, fp: r.fp, businessState: biz.stateCode, sales, amendments,
     purchasesByDate: toRPurchases(await purchasesByDate(db, r.from, r.to)),
-    purchasesByItc: toRPurchases(await purchasesForItcPeriod(db, key)),
+    purchasesByItc: itcBills,
     adjustments, interest: row.interest, lateFee: row.lateFee,
   });
   const compare = compare1vs3b(gstr1, gstr3b);
@@ -58,9 +64,12 @@ export async function computeReturns(db: Tx, key: string): Promise<Computed> {
   if (biz.filingFrequency === "monthly" && !/^\d{4}-\d{2}$/.test(key)) issues.push("Business files monthly but this is a quarterly period.");
   if (biz.filingFrequency === "quarterly" && /^\d{4}-\d{2}$/.test(key)) issues.push("Business files quarterly but this is a monthly period.");
   if (compare.some((c) => c.difference !== 0)) issues.push("GSTR-1 and GSTR-3B outward figures differ.");
+  if (deferred.size) issues.push(`${deferred.size} purchase bill(s) are not in GSTR-2B, so their ITC is deferred. See the GSTR-2B section.`);
+  if (recon.summary.mismatch) issues.push(`${recon.summary.mismatch} purchase bill(s) differ from GSTR-2B.`);
+  if (recon.summary.missing_in_books) issues.push(`${recon.summary.missing_in_books} GSTR-2B row(s) have no matching purchase entry.`);
   const missingHsn = sales.flatMap((x) => x.lines).filter((l) => !l.hsnSac).length;
   if (missingHsn) issues.push(`${missingHsn} sales line(s) have no HSN/SAC code.`);
-  return { period: key, gstr1, gstr3b, compare, issues };
+  return { period: key, gstr1, gstr3b, compare, issues, deferredBills: [...deferred] };
 }
 
 /** Use the frozen snapshot for a locked, filed period; otherwise compute live. */

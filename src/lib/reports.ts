@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lte, ne } from "drizzle-orm";
+import { and, asc, eq, gte, isNull, lte, ne } from "drizzle-orm";
 import type { Tx } from "../db/client";
 import { purchaseLines, purchases, salesDocs, salesLines } from "../db/schema";
 import { STATES } from "./gst/gstin";
@@ -52,7 +52,8 @@ export function resolveFilter(q: URLSearchParams, defaultFy: number): ReportFilt
 }
 
 async function sales(db: Tx, f: ReportFilter, includeCancelled = false) {
-  const conds = [gte(salesDocs.date, f.from), lte(salesDocs.date, f.to)];
+  // Only the current version of an amended document counts.
+  const conds = [gte(salesDocs.date, f.from), lte(salesDocs.date, f.to), isNull(salesDocs.amendedById)];
   if (!includeCancelled) conds.push(eq(salesDocs.status, "active"));
   return db.select().from(salesDocs).where(and(...conds)).orderBy(asc(salesDocs.date), asc(salesDocs.number));
 }
@@ -118,7 +119,7 @@ export async function buildReport(db: Tx, kind: string, f: ReportFilter): Promis
     case "rate-summary": {
       const lines = await db.select({ l: salesLines, docType: salesDocs.docType }).from(salesLines)
         .innerJoin(salesDocs, eq(salesDocs.id, salesLines.docId))
-        .where(and(gte(salesDocs.date, f.from), lte(salesDocs.date, f.to), eq(salesDocs.status, "active")));
+        .where(and(gte(salesDocs.date, f.from), lte(salesDocs.date, f.to), eq(salesDocs.status, "active"), isNull(salesDocs.amendedById)));
       const flat: Row[] = lines.map(({ l, docType }) => signed({
         hsn: l.hsnSac, description: l.description, rateBp: l.gstRateBp, qty: sign(docType) * Number(l.qty),
         taxableValue: l.taxableValue, cgst: l.cgst, sgst: l.sgst, igst: l.igst, cess: l.cess, total: l.total,

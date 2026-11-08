@@ -6,7 +6,7 @@ import { emptyFilters, ListFilters, Pager, type Filters } from "@/components/lis
 import { useApp } from "@/components/shell";
 import { DOC_LABEL, Err, Field, Loading, Money, qs, useLoad } from "@/components/ui";
 
-interface Row { id: number; docType: string; number: string; date: string; partyName: string; partyGstin: string; section: string; taxableValue: number; cgst: number; sgst: number; igst: number; cess: number; grandTotal: number; status: string }
+interface Row { id: number; docType: string; number: string; date: string; partyName: string; partyGstin: string; section: string; amendsId: number | null; amendedById: number | null; taxableValue: number; cgst: number; sgst: number; igst: number; cess: number; grandTotal: number; status: string }
 interface List { rows: Row[]; total: number; page: number; pageSize: number; totals: { taxableValue: number; tax: number; grandTotal: number } }
 
 export default function SalesPage() {
@@ -38,10 +38,10 @@ export default function SalesPage() {
             <thead><tr><th>Date</th><th>Number</th><th>Type</th><th>Customer</th><th>Section</th><th className="num">Taxable</th><th className="num">Tax</th><th className="num">Total</th></tr></thead>
             <tbody>
               {data.rows.map((r) => (
-                <tr key={r.id} className={r.status === "cancelled" ? "cancelled" : undefined}>
+                <tr key={r.id} className={r.status === "cancelled" || r.amendedById ? "cancelled" : undefined}>
                   <td>{r.date}</td>
-                  <td><Link href={`/sales/${r.id}`}>{r.number}</Link></td>
-                  <td>{DOC_LABEL[r.docType]}{r.status === "cancelled" ? " (cancelled)" : ""}</td>
+                  <td><Link href={`/sales/${r.id}`}>{r.number.replace(/~A\d*$/, "")}</Link></td>
+                  <td>{DOC_LABEL[r.docType]}{r.status === "cancelled" ? " (cancelled)" : ""}{r.amendsId ? " (amendment)" : ""}{r.amendedById ? " (amended)" : ""}</td>
                   <td>{r.partyName}{r.partyGstin ? <><br /><small>{r.partyGstin}</small></> : null}</td>
                   <td>{r.section.toUpperCase()}</td>
                   <td className="num"><Money p={r.taxableValue} /></td>
@@ -49,7 +49,7 @@ export default function SalesPage() {
                   <td className="num"><Money p={r.grandTotal} /></td>
                 </tr>
               ))}
-              <tr className="total"><td colSpan={5}>{data.total} document(s); totals exclude cancelled, credit notes subtracted</td>
+              <tr className="total"><td colSpan={5}>{data.total} document(s); totals exclude cancelled and amended versions, credit notes subtracted</td>
                 <td className="num"><Money p={data.totals.taxableValue} /></td><td className="num"><Money p={data.totals.tax} /></td><td className="num"><Money p={data.totals.grandTotal} /></td></tr>
             </tbody>
           </table></div>

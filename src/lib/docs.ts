@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, like, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, like, lte, or, sql, type SQL } from "drizzle-orm";
 import type { Db, Tx } from "../db/client";
 import { purchaseLines, purchases, salesDocs, salesLines } from "../db/schema";
 import { audit } from "./audit";
@@ -118,20 +118,39 @@ export async function getSale(db: Tx, id: number): Promise<{ doc: SalesDoc; line
   return { doc, lines };
 }
 
-export async function createSale(db: Db, user: SessionUser, input: SaleInput) {
-  return db.transaction(async (tx) => {
-    const biz = await getBusiness(tx);
-    await assertUnlocked(tx, biz.filingFrequency, { dates: [input.date] });
-    const { calc, section, pos } = computeSale(input, biz);
-    const number = input.number ?? (await nextSalesNumber(tx, input.docType));
-    const exists = await tx.select({ id: salesDocs.id }).from(salesDocs)
-      .where(and(eq(salesDocs.docType, input.docType), eq(salesDocs.number, number))).limit(1);
-    if (exists[0]) throw conflict(`Number ${number} is already used`);
-    const [doc] = await tx.insert(salesDocs).values({ ...saleValues(input, calc, section, pos), number }).returning();
-    await tx.insert(salesLines).values(lineRows(calc).map((l) => ({ ...l, docId: doc.id })));
-    await audit(tx, user, { action: "create", entityType: "sale", entityId: doc.id, summary: `${doc.docType} ${doc.number}`, after: doc });
-    return doc;
+export interface InsertOpts {
+  importBatchId?: number;
+  /** Amendment rows: lock is checked on these periods instead of the document date. */
+  lockPeriods?: string[];
+  amendsId?: number;
+  amendPeriod?: string;
+  number?: string;
+}
+
+/** Insert a sale inside an existing transaction (used by create, import and amend). */
+export async function insertSale(tx: Tx, user: SessionUser, input: SaleInput, opts: InsertOpts = {}) {
+  const biz = await getBusiness(tx);
+  if (opts.lockPeriods) await assertUnlocked(tx, biz.filingFrequency, { periods: opts.lockPeriods });
+  else await assertUnlocked(tx, biz.filingFrequency, { dates: [input.date] });
+  const { calc, section, pos } = computeSale(input, biz);
+  const number = opts.number ?? input.number ?? (await nextSalesNumber(tx, input.docType));
+  const exists = await tx.select({ id: salesDocs.id }).from(salesDocs)
+    .where(and(eq(salesDocs.docType, input.docType), eq(salesDocs.number, number))).limit(1);
+  if (exists[0]) throw conflict(`Number ${number} is already used`);
+  const [doc] = await tx.insert(salesDocs).values({
+    ...saleValues(input, calc, section, pos), number,
+    importBatchId: opts.importBatchId ?? null, amendsId: opts.amendsId ?? null, amendPeriod: opts.amendPeriod ?? null,
+  }).returning();
+  await tx.insert(salesLines).values(lineRows(calc).map((l) => ({ ...l, docId: doc.id })));
+  await audit(tx, user, {
+    action: opts.amendsId ? "amend" : opts.importBatchId ? "import" : "create",
+    entityType: "sale", entityId: doc.id, summary: `${doc.docType} ${doc.number}`, after: doc,
   });
+  return doc;
+}
+
+export async function createSale(db: Db, user: SessionUser, input: SaleInput) {
+  return db.transaction((tx) => insertSale(tx, user, input));
 }
 
 export async function updateSale(db: Db, user: SessionUser, id: number, input: SaleInput) {
@@ -139,10 +158,16 @@ export async function updateSale(db: Db, user: SessionUser, id: number, input: S
     const biz = await getBusiness(tx);
     const before = await getSale(tx, id);
     if (before.doc.status === "cancelled") throw conflict("A cancelled document cannot be edited");
+    if (before.doc.amendedById) throw conflict("This document has been amended. Open the amendment to make changes.");
     if (input.docType !== before.doc.docType) throw unprocessable("The document type cannot be changed");
-    await assertUnlocked(tx, biz.filingFrequency, { dates: [before.doc.date, input.date] });
+    if (before.doc.amendsId) await assertUnlocked(tx, biz.filingFrequency, { periods: [before.doc.amendPeriod] });
+    else await assertUnlocked(tx, biz.filingFrequency, { dates: [before.doc.date, input.date] });
     const { calc, section, pos } = computeSale(input, biz);
-    const number = input.number ?? before.doc.number;
+    if (before.doc.amendsId && section !== before.doc.section) {
+      throw unprocessable(`This change would move the amendment to section ${section.toUpperCase()}. Issue a credit note and a new invoice instead.`);
+    }
+    // An amendment keeps its number: the portal number cannot be amended.
+    const number = before.doc.amendsId ? before.doc.number : input.number ?? before.doc.number;
     if (number !== before.doc.number) {
       const exists = await tx.select({ id: salesDocs.id }).from(salesDocs)
         .where(and(eq(salesDocs.docType, input.docType), eq(salesDocs.number, number))).limit(1);
@@ -163,7 +188,14 @@ export async function cancelSale(db: Db, user: SessionUser, id: number, reason: 
     const biz = await getBusiness(tx);
     const { doc } = await getSale(tx, id);
     if (doc.status === "cancelled") throw conflict("Already cancelled");
-    await assertUnlocked(tx, biz.filingFrequency, { dates: [doc.date] });
+    if (doc.amendedById) throw conflict("This document has been amended. Cancel the amendment first.");
+    if (doc.amendsId) {
+      // Withdrawing an amendment makes the previous version current again.
+      await assertUnlocked(tx, biz.filingFrequency, { periods: [doc.amendPeriod] });
+      await tx.update(salesDocs).set({ amendedById: null, updatedAt: new Date() }).where(eq(salesDocs.id, doc.amendsId));
+    } else {
+      await assertUnlocked(tx, biz.filingFrequency, { dates: [doc.date] });
+    }
     const notes = [doc.notes, `Cancelled: ${reason}`].filter(Boolean).join("\n");
     const [after] = await tx.update(salesDocs).set({ status: "cancelled", notes, updatedAt: new Date() })
       .where(eq(salesDocs.id, id)).returning();
@@ -208,9 +240,9 @@ export async function listSales(db: Tx, f: ListFilter & { section?: string }) {
   const page = Math.max(f.page ?? 1, 1);
   const rows = await db.select().from(salesDocs).where(cond)
     .orderBy(desc(salesDocs.date), desc(salesDocs.id)).limit(pageSize).offset((page - 1) * pageSize);
-  // Totals sign credit notes negative and skip cancelled documents.
+  // Totals sign credit notes negative and skip cancelled and superseded (amended) documents.
   const sign = sql`case when ${salesDocs.docType} = 'credit_note' then -1 else 1 end`;
-  const active = sql`case when ${salesDocs.status} = 'active' then 1 else 0 end`;
+  const active = sql`case when ${salesDocs.status} = 'active' and ${salesDocs.amendedById} is null then 1 else 0 end`;
   const [t] = await db.select({
     count: sql<number>`count(*)::int`,
     taxableValue: sql<number>`coalesce(sum(${salesDocs.taxableValue} * ${sign} * ${active}), 0)::bigint`,
@@ -294,17 +326,20 @@ async function assertPurchaseUnique(tx: Tx, input: PurchaseInput, exceptId?: num
   if (rows.some((r) => r.id !== exceptId)) throw conflict(`Bill ${input.number} from ${input.supplierName} is already entered`);
 }
 
+/** Insert a purchase inside an existing transaction (used by create and import). */
+export async function insertPurchase(tx: Tx, user: SessionUser, input: PurchaseInput, importBatchId?: number) {
+  const biz = await getBusiness(tx);
+  const c = computePurchase(input, biz);
+  await assertUnlocked(tx, biz.filingFrequency, { dates: [input.date], periods: [c.itcPeriod] });
+  await assertPurchaseUnique(tx, input);
+  const [doc] = await tx.insert(purchases).values({ ...purchaseValues(input, c), importBatchId: importBatchId ?? null }).returning();
+  await tx.insert(purchaseLines).values(lineRows(c.calc).map((l, i) => ({ ...l, ...c.eligibility[i], docId: doc.id })));
+  await audit(tx, user, { action: importBatchId ? "import" : "create", entityType: "purchase", entityId: doc.id, summary: `${doc.supplierName} ${doc.number}`, after: doc });
+  return doc;
+}
+
 export async function createPurchase(db: Db, user: SessionUser, input: PurchaseInput) {
-  return db.transaction(async (tx) => {
-    const biz = await getBusiness(tx);
-    const c = computePurchase(input, biz);
-    await assertUnlocked(tx, biz.filingFrequency, { dates: [input.date], periods: [c.itcPeriod] });
-    await assertPurchaseUnique(tx, input);
-    const [doc] = await tx.insert(purchases).values(purchaseValues(input, c)).returning();
-    await tx.insert(purchaseLines).values(lineRows(c.calc).map((l, i) => ({ ...l, ...c.eligibility[i], docId: doc.id })));
-    await audit(tx, user, { action: "create", entityType: "purchase", entityId: doc.id, summary: `${doc.supplierName} ${doc.number}`, after: doc });
-    return doc;
-  });
+  return db.transaction((tx) => insertPurchase(tx, user, input));
 }
 
 export async function updatePurchase(db: Db, user: SessionUser, id: number, input: PurchaseInput) {
@@ -421,19 +456,35 @@ export function lineToInput(l: SalesLine | PurchaseLine) {
   return { ...l, qtyMilli: parseScaled(l.qty, 3), unitPriceE4: parseScaled(l.unitPrice, 4) };
 }
 
-export async function salesForRange(db: Tx, from: string, to: string) {
-  const docs = await db.select().from(salesDocs)
-    .where(and(gte(salesDocs.date, from), lte(salesDocs.date, to), eq(salesDocs.status, "active")))
-    .orderBy(asc(salesDocs.date), asc(salesDocs.number));
+async function withLines(db: Tx, docs: SalesDoc[]) {
   const lines = docs.length
     ? await db.select().from(salesLines).where(inArray(salesLines.docId, docs.map((d) => d.id))).orderBy(asc(salesLines.position))
     : [];
-  return { docs, lines };
+  return docs.map((d) => ({ ...d, lines: lines.filter((l) => l.docId === d.id) }));
+}
+
+/** Original documents dated in the range (an amendment is reported in its amendment period instead). */
+export async function salesForRange(db: Tx, from: string, to: string) {
+  const docs = await db.select().from(salesDocs)
+    .where(and(gte(salesDocs.date, from), lte(salesDocs.date, to), eq(salesDocs.status, "active"), isNull(salesDocs.amendsId)))
+    .orderBy(asc(salesDocs.date), asc(salesDocs.number));
+  return withLines(db, docs);
+}
+
+/** Amendments reported in a period, each with the version it replaces. */
+export async function amendmentsForPeriod(db: Tx, period: string) {
+  const revised = await db.select().from(salesDocs)
+    .where(and(eq(salesDocs.amendPeriod, period), eq(salesDocs.status, "active")))
+    .orderBy(asc(salesDocs.date), asc(salesDocs.number));
+  const prevIds = revised.map((r) => r.amendsId).filter((x): x is number => x != null);
+  const previous = prevIds.length ? await db.select().from(salesDocs).where(inArray(salesDocs.id, prevIds)) : [];
+  const [rev, prev] = [await withLines(db, revised), await withLines(db, previous)];
+  return rev.map((r) => ({ revised: r, previous: prev.find((p) => p.id === r.amendsId)! })).filter((x) => x.previous);
 }
 
 export async function allSalesNumbersForRange(db: Tx, from: string, to: string) {
   return db.select({ docType: salesDocs.docType, number: salesDocs.number, status: salesDocs.status })
-    .from(salesDocs).where(and(gte(salesDocs.date, from), lte(salesDocs.date, to)));
+    .from(salesDocs).where(and(gte(salesDocs.date, from), lte(salesDocs.date, to), isNull(salesDocs.amendsId)));
 }
 
 export async function purchasesForItcPeriod(db: Tx, period: string) {

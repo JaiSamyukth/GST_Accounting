@@ -1,6 +1,6 @@
 # GST-Invoice — design specification
 
-Status: first implementation landed (see section 18). Date: 7 November 2026.
+Status: implemented (see section 18). Date: 8 November 2026.
 
 Rebuild of `D:\Projects\GST_Accounting` (FastAPI + React/Vite + SQLite/Postgres) as a single
 Next.js application on Vercel with Neon Postgres and Neon Object Storage. Behaviour is preserved;
@@ -367,47 +367,42 @@ Generated PDFs and reports are not written to the bucket. Only user-supplied att
 
 Every item below must be demonstrable before the rebuild is called done.
 
-- [ ] Setup, login, logout, change password, reset link, session list/revoke
-- [ ] Owner/accountant permissions and login throttling
-- [ ] Business settings with GSTIN/PAN/state consistency checks
-- [ ] Tax rates, HSN/SAC, customers, suppliers
-- [ ] Sales invoice, credit note, debit note; B2B/B2C/B2CL/export classification
-- [ ] Amendments of filed invoices with original reference
-- [ ] Purchase bill with per-line ITC, category defaults, ITC period
-- [ ] GST engine: intra/inter, inclusive/exclusive, discount, cess, nil/exempt/non-GST/zero-rated, round off
-- [ ] GSTR-1 JSON with every section, HSN, nil, doc issue, amendments
-- [ ] GSTR-3B JSON with 3.1/3.2/4A/4B/4C/4D/5/6.1 and set-off order
-- [ ] GSTR-1 vs 3B comparison
-- [ ] GSTR-2B import, matching, mismatch/missing summaries, ITC deferral
-- [ ] ITC adjustments and reclaims
-- [ ] Approve, mark filed, ARN, payment, lock/unlock, snapshot
-- [ ] All 12 reports with filters and four export formats
-- [ ] Bulk import of seven kinds with preview, error CSV, commit, undo
-- [ ] Invoice/note PDF and return/report PDF
-- [ ] Attach, list, download and delete a bill photo or supplier PDF in Neon Object Storage
-- [ ] Audit log and full JSON backup
-- [ ] Typecheck, lint, tests, production build green
+- [x] Setup, login, logout, change password, reset link, session list/revoke
+- [x] Owner/accountant permissions and login throttling
+- [x] Business settings with GSTIN/PAN/state consistency checks
+- [x] Tax rates, HSN/SAC, customers, suppliers
+- [x] Sales invoice, credit note, debit note; B2B/B2C/B2CL/export classification
+- [x] Amendments of filed invoices with original reference
+- [x] Purchase bill with per-line ITC, category defaults, ITC period
+- [x] GST engine: intra/inter, inclusive/exclusive, discount, cess, nil/exempt/non-GST/zero-rated, round off
+- [x] GSTR-1 JSON with every section, HSN, nil, doc issue, amendments
+- [x] GSTR-3B JSON with 3.1/3.2/4A/4B/4C/4D/5/6.1 and set-off order
+- [x] GSTR-1 vs 3B comparison
+- [x] GSTR-2B import, matching, mismatch/missing summaries, ITC deferral
+- [x] ITC adjustments and reclaims
+- [x] Approve, mark filed, ARN, payment, lock/unlock, snapshot
+- [x] All 12 reports with filters and four export formats
+- [x] Bulk import of seven kinds with preview, error CSV, commit, undo
+- [x] Invoice/note PDF and return/report PDF
+- [x] Attach, list, download and delete a bill photo or supplier PDF in Neon Object Storage
+- [x] Audit log and full JSON backup
+- [x] Typecheck, lint, tests, production build green
 
-## 18. Implementation status and decisions (7 November 2026)
+## 18. Implementation status and decisions (8 November 2026)
 
-Built and tested: setup/login/logout/sessions/reset links, roles and throttling, business settings,
-tax rates, HSN/SAC, parties, the GST engine and live preview, sales invoices and notes, purchases with
-per-line ITC, cancel, invoice PDF, attachments (Neon Object Storage), GSTR-1 and GSTR-3B figures and
-portal JSON, comparison, ITC adjustments, approve/file/pay/lock/unlock, 12 reports in PDF/XLSX/CSV/JSON,
-home dashboard, users, audit log and backup. Fixes for all four defects in `AGENTS.md` have tests.
+Everything in sections 2–17 is built. All items in the parity checklist (section 17) are implemented and covered by
+tests. Setup and day-to-day instructions are in `docs/setup-guide.md`.
 
-Not built yet (parity checklist items still open):
-
-- Bulk import wizard (section 12) and the `/import` screen.
-- GSTR-2B import, reconciliation and ITC deferral for bills missing in 2B.
-- Amendments (`b2ba`, `b2cla`, `cdnra`) and `POST /api/sales/:id/amend`. The payload keys are emitted empty.
+Verified: unit and API tests on PGlite; the built app driven in a browser on PGlite **and** on PostgreSQL 16 through
+the same `postgres` driver used for Neon; attachments against an S3-compatible server. Not yet run against a live
+Neon project or bucket from this repository's CI (there is no CI yet).
 
 Decisions made while building:
 
 - **Quarter keys.** In `YYYY-Qn`, `YYYY` is the financial-year start year: `2026-Q4` is Jan–Mar 2027.
 - **ITC in table 4.** Lines blocked under section 17(5) (by purchase category) appear in 4A and are
-  reversed in 4B(1). Lines that were never claimable — unregistered supplier, business on the 5%
-  no-ITC scheme, or manually marked ineligible — are not reported in table 4 at all.
+  reversed in 4B(1). Lines that were never claimable (unregistered supplier, business on the 5% no-ITC
+  scheme, or manually marked ineligible) are not reported in table 4 at all.
 - **Reclaims** are added to 4A(5) and also shown in 4D(1).
 - **Late fee** is split equally between CGST and SGST in the 3B payload; interest is recorded on the
   period but not split by head.
@@ -415,6 +410,22 @@ Decisions made while building:
   Every ITC change checks the lock on the bill's period and on both the old and new ITC periods.
 - **Unlock** returns filed returns to `approved`, clears ARNs and filed dates, removes the snapshot
   from the period row and keeps it in the audit log entry.
+- **GSTR-2B.** One set of 2B rows per period (a new upload replaces it). Bills are matched on supplier GSTIN, document
+  type and a normalised number (`INV/0012` = `inv-12`), with ₹1 tolerance per head; then "probable" matches on equal
+  amounts within 10 days. Only when 2B is loaded for a period, bills missing from it are **deferred**: excluded from
+  that period's table 4 and listed. Mismatches are claimed as per books and flagged.
+- **Amendments.** Only a document in a *locked* period can be amended, only B2B, B2CL and registered credit/debit
+  notes (B2CS and exports are corrected with notes), and only into a later, unlocked period. The revised version is
+  a new row (`amends_id`, `amend_period`; the previous row gets `amended_by_id`). Its internal number carries a
+  `~A` suffix; the portal number cannot be amended. GSTR-1 of the amendment period lists it in `b2ba`/`b2cla`/`cdnra`
+  with full values; GSTR-3B takes the difference. Lists and reports count only the latest version. Withdrawing
+  (cancelling) an amendment restores the previous version. HSN and document-issue tables are not adjusted for
+  amendments.
+- **Imports.** Rows that fail validation are skipped; valid records are committed in one transaction and the batch
+  records exactly what it created. Undo deletes those records (payments: restores the previous values) and refuses
+  when a period involved is locked or a document has since been amended. `.xls` is not supported (save as `.xlsx`).
+  Percentages are always read as percent (`0.25` = 0.25%).
 - **Local development** may set `DATABASE_URL="pglite:./.data/pglite"` to run an embedded Postgres that
-  migrates itself. Production uses Neon. Apply migrations to Neon with `npm run db:migrate`.
+  migrates itself. Production uses Neon. Apply migrations with `npm run db:migrate`.
+- `npm run user:reset-link -- <email>` prints a reset link from the command line (owner recovery).
 - Invoice PDFs print amounts as "Rs." because the built-in PDF font has no rupee glyph.

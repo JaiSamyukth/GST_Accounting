@@ -129,7 +129,18 @@ export interface Gstr1Input {
   sales: RSale[];
   /** Every document number issued in the period, including cancelled ones. */
   issued: Array<{ docType: string; number: string; status: string }>;
+  /** Amendments reported in this period, each with the version it replaces. */
+  amendments?: Amendment[];
 }
+
+export interface Amendment { revised: RSale; previous: RSale }
+
+/** Internal amendment numbers carry a "~A", "~A2" suffix; the portal number never does. */
+export function portalNumber(n: string): string {
+  return n.replace(/~A\d*$/, "");
+}
+
+export const AMENDMENT_SECTION: Record<string, string> = { b2b: "b2ba", b2cl: "b2cla", cdnr: "cdnra" };
 
 const SECTIONS = ["b2b", "b2cl", "b2cs", "exp", "cdnr", "cdnur"] as const;
 
@@ -224,6 +235,46 @@ export function buildGstr1(input: Gstr1Input): Gstr1Result {
     }
   }
 
+  const b2ba = new Map<string, unknown[]>();
+  const b2cla = new Map<string, unknown[]>();
+  const cdnra = new Map<string, unknown[]>();
+  for (const { revised: r, previous: p } of input.amendments ?? []) {
+    const sign = signOf(r.docType);
+    const intra = !r.isExport && r.placeOfSupply === input.businessState;
+    const rl = r.lines.filter((l) => TAXABLE.has(l.supplyKind));
+    const rTax = zeroTax();
+    const pTax = zeroTax();
+    for (const l of rl) addLine(rTax, l, 1);
+    for (const l of p.lines) if (TAXABLE.has(l.supplyKind)) addLine(pTax, l, 1);
+    // GSTR-1 reports the full revised document; totals move by the difference only.
+    addTax(totals, rTax, sign);
+    addTax(totals, pTax, -sign);
+    const section = AMENDMENT_SECTION[r.section] ?? `${r.section}a`;
+    summary[section] ??= { count: 0, tax: zeroTax() };
+    summary[section].count += 1;
+    addTax(summary[section].tax, rTax);
+    for (const it of itemsByRate(rl)) {
+      rows.push({
+        section, number: portalNumber(r.number), date: r.date, party: r.partyName, gstin: r.partyGstin, pos: r.placeOfSupply,
+        rateBp: it.rateBp, noteType: r.docType === "invoice" ? "" : r.docType === "credit_note" ? "C" : "D", tax: it.tax,
+      });
+    }
+    const common = { val: toRupees(r.grandTotal) };
+    if (section === "b2ba") {
+      const list = b2ba.get(r.partyGstin) ?? [];
+      list.push({ oinum: portalNumber(p.number), oidt: portalDate(p.date), inum: portalNumber(r.number), idt: portalDate(r.date), ...common, pos: r.placeOfSupply, rchrg: r.reverseCharge ? "Y" : "N", inv_typ: "R", itms: portalItems(rl, intra) });
+      b2ba.set(r.partyGstin, list);
+    } else if (section === "b2cla") {
+      const list = b2cla.get(r.placeOfSupply) ?? [];
+      list.push({ oinum: portalNumber(p.number), oidt: portalDate(p.date), inum: portalNumber(r.number), idt: portalDate(r.date), ...common, itms: portalItems(rl, false) });
+      b2cla.set(r.placeOfSupply, list);
+    } else if (section === "cdnra") {
+      const list = cdnra.get(r.partyGstin) ?? [];
+      list.push({ ont_num: portalNumber(p.number), ont_dt: portalDate(p.date), ntty: r.docType === "credit_note" ? "C" : "D", nt_num: portalNumber(r.number), nt_dt: portalDate(r.date), ...common, pos: r.placeOfSupply, rchrg: r.reverseCharge ? "Y" : "N", inv_typ: "R", itms: portalItems(rl, intra) });
+      cdnra.set(r.partyGstin, list);
+    }
+  }
+
   const docIssue = ([["invoice", 1, "Invoices for outward supply"], ["debit_note", 4, "Debit notes"], ["credit_note", 5, "Credit notes"]] as const)
     .map(([type, docNum, label]) => {
       const list = input.issued.filter((d) => d.docType === type).map((d) => d.number).sort(naturalCompare);
@@ -249,9 +300,9 @@ export function buildGstr1(input: Gstr1Input): Gstr1Result {
     version: "GST3.2.1",
     hash: "hash",
     b2b: [...b2b.entries()].map(([ctin, inv]) => ({ ctin, inv })),
-    b2ba: [],
+    b2ba: [...b2ba.entries()].map(([ctin, inv]) => ({ ctin, inv })),
     b2cl: [...b2cl.entries()].map(([pos, inv]) => ({ pos, inv })),
-    b2cla: [],
+    b2cla: [...b2cla.entries()].map(([pos, inv]) => ({ pos, inv })),
     b2cs: b2cs.map((b) => {
       const r = rupeeTax(b.tax);
       const row: Record<string, unknown> = { sply_ty: b.splyTy, pos: b.pos, typ: "OE", txval: r.txval, rt: pct(b.rateBp) };
@@ -265,7 +316,7 @@ export function buildGstr1(input: Gstr1Input): Gstr1Result {
     }),
     exp: (["WPAY", "WOPAY"] as const).filter((k) => exp[k].length).map((k) => ({ exp_typ: k, inv: exp[k] })),
     cdnr: [...cdnr.entries()].map(([ctin, nt]) => ({ ctin, nt })),
-    cdnra: [],
+    cdnra: [...cdnra.entries()].map(([ctin, nt]) => ({ ctin, nt })),
     cdnur,
     nil: { inv: nil.map((n) => ({ sply_ty: n.splyTy, expt_amt: toRupees(n.exempt), nil_amt: toRupees(n.nil), ngsup_amt: toRupees(n.nonGst) })) },
     hsn: { hsn_b2b: hsnPayload(hsn.b2b), hsn_b2c: hsnPayload(hsn.b2c) },
@@ -339,6 +390,8 @@ export interface Gstr3bInput {
   sales: RSale[];
   /** Purchases dated in the period (for 3.1(d) and table 5). */
   purchasesByDate: RPurchase[];
+  /** Amendments reported in this period: only the difference enters 3B. */
+  amendments?: Amendment[];
   /** Purchases whose ITC period is this period (for table 4). */
   purchasesByItc: RPurchase[];
   adjustments: ItcAdj[];
@@ -368,8 +421,8 @@ export function buildGstr3b(input: Gstr3bInput): Gstr3bResult {
   const t31 = { a: zeroTax(), b: zeroTax(), c: zeroTax(), d: zeroTax(), e: zeroTax() };
   const t32 = new Map<string, { pos: string; txval: number; iamt: number }>();
 
-  for (const s of input.sales) {
-    const sign = signOf(s.docType);
+  const addSale = (s: RSale, factor: number) => {
+    const sign = signOf(s.docType) * factor;
     const unregisteredInter = !s.partyGstin && !s.isExport && s.placeOfSupply !== input.businessState;
     for (const l of s.lines) {
       if (l.supplyKind === "taxable") {
@@ -384,6 +437,11 @@ export function buildGstr3b(input: Gstr3bInput): Gstr3bResult {
       else if (l.supplyKind === "nil" || l.supplyKind === "exempt") addLine(t31.c, l, sign);
       else addLine(t31.e, l, sign);
     }
+  };
+  for (const s of input.sales) addSale(s, 1);
+  for (const a of input.amendments ?? []) {
+    addSale(a.revised, 1);
+    addSale(a.previous, -1);
   }
 
   const t5 = { gstInter: 0, gstIntra: 0, nonGstInter: 0, nonGstIntra: 0 };
