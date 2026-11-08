@@ -129,7 +129,7 @@ That runs a small built-in database on your computer. It is for trying things ou
 5. If `APP_URL` was a guess, correct it under **Settings → Environment Variables** and click
    **Deployments → … → Redeploy**. `APP_URL` is used in password-reset links.
 
-The repository's `vercel.json` runs the app in Singapore, next to the Neon database, which keeps pages fast.
+The repository's `vercel.json` runs the app in Cleveland (`cle1`), next to a Neon database in US East (Ohio), which keeps pages fast. If your Neon project is in another region, change `regions` in `vercel.json` to the nearest Vercel region (Singapore is `sin1`).
 
 ## Part E — First visit
 

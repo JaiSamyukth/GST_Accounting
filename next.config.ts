@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pdfkit", "exceljs", "@electric-sql/pglite", "bcryptjs"],
+  serverExternalPackages: ["pdfkit", "exceljs", "@electric-sql/pglite", "bcryptjs", "pg", "@neondatabase/serverless", "ws", "https-proxy-agent"],
   poweredByHeader: false,
   async headers() {
     return [

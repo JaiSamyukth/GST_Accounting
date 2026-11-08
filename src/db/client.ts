@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
-import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
+import { attachDatabasePool } from "@vercel/functions";
+import { drizzle as drizzlePg } from "drizzle-orm/node-postgres";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import postgres from "postgres";
+import { Pool } from "pg";
 import * as schema from "./schema";
 
 export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
@@ -25,9 +26,37 @@ async function openPglite(dir: string): Promise<Db> {
 }
 
 function openPostgres(url: string): Db {
-  // prepare:false keeps it compatible with Neon's pooled (PgBouncer) endpoint.
-  const client = postgres(url, { prepare: false, max: 5, idle_timeout: 20 });
-  return drizzlePg(client, { schema }) as unknown as Db;
+  // node-postgres pool on Neon's pooled (-pooler, PgBouncer) endpoint. One pool per server
+  // instance; on Vercel Fluid compute, attachDatabasePool closes idle clients before the
+  // instance suspends so connections are not leaked. Outside Vercel it does nothing.
+  const pool = new Pool({ connectionString: url, max: 5, idleTimeoutMillis: 10_000, connectionTimeoutMillis: 15_000 });
+  pool.on("error", (e) => console.error("Idle database client error", e.message));
+  attachDatabasePool(pool);
+  return drizzlePg(pool, { schema }) as unknown as Db;
+}
+
+/**
+ * Neon's WebSocket driver (port 443). Opt in with DATABASE_DRIVER=neon-ws on networks that block
+ * Postgres port 5432; it goes through HTTPS_PROXY when one is set. Production on Vercel uses `pg`.
+ */
+async function openNeonWs(url: string): Promise<Db> {
+  const { Pool, neonConfig } = await import("@neondatabase/serverless");
+  const { drizzle } = await import("drizzle-orm/neon-serverless");
+  neonConfig.webSocketConstructor = await neonWebSocket();
+  return drizzle(new Pool({ connectionString: url, max: 5 }), { schema }) as unknown as Db;
+}
+
+export async function neonWebSocket() {
+  const { default: WS } = await import("ws");
+  const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+  if (!proxy) return WS;
+  const { HttpsProxyAgent } = await import("https-proxy-agent");
+  const agent = new HttpsProxyAgent(proxy);
+  return class extends WS {
+    constructor(address: string | URL, protocols?: string | string[], options?: ConstructorParameters<typeof WS>[2]) {
+      super(address, protocols, { ...(options ?? {}), agent });
+    }
+  };
 }
 
 /**
@@ -39,6 +68,7 @@ export function getDb(): Promise<Db> {
   if (!g.__gstDb) {
     const url = process.env.DATABASE_URL ?? "";
     if (url.startsWith("pglite:")) g.__gstDb = openPglite(url.slice("pglite:".length));
+    else if (url && process.env.DATABASE_DRIVER === "neon-ws") g.__gstDb = openNeonWs(url);
     else if (url) g.__gstDb = Promise.resolve(openPostgres(url));
     else return Promise.reject(new Error("DATABASE_URL is not set"));
   }
