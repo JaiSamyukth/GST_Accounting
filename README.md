@@ -1,91 +1,73 @@
-# Dev Caters GST Accounting
+# GST Accounting
 
-GST accounting for Dev Caters, Trichy: record sales and purchase bills, check input tax credit against GSTR-2B, and prepare GSTR-1 and GSTR-3B every month. Nothing else (no orders, menus, stock or payroll).
+GST accounting for Dev Caters, Trichy — rebuilt as a single Next.js application for Vercel, with Neon Postgres and Neon Object Storage.
 
-The screens look like the Dev Caters duplicate order book (navy print, white original, yellow carbon copy), so the people who fill that book already know where things go. A guided tour runs on first sign-in, and **Guide & help** has how-tos and a plain-English GST glossary. Any underlined GST word in the app explains itself when tapped.
+Record sales and purchase bills, check input tax credit against GSTR-2B, prepare GSTR-1 and GSTR-3B every month, and print or download the papers as PDF, Excel, CSV or JSON.
 
-## What it does
+> **Status: working.** Every module below is built and tested. **New here? Follow [`docs/setup-guide.md`](docs/setup-guide.md)** for step-by-step setup on Neon and Vercel and for the monthly routine.
 
-| Module | Where |
+## What it is
+
+- **One app.** Next.js (App Router, TypeScript) serves both the screens and the `/api` routes. No separate Python service.
+- **Neon Postgres.** All data, including sessions and the audit log.
+- **Neon Object Storage.** Bill photos and supplier PDFs are attached to a sale or purchase and kept in a private bucket.
+- **Vercel.** Deployed as a standard Next.js project.
+- **Plain UI.** White background, system fonts, ordinary forms and tables. No theme, no tour, no animation.
+- **PDF output.** Invoices, credit/debit notes, returns and reports are generated as PDF on demand. Generated files are streamed, not stored; only files you attach yourself are kept.
+
+## Modules
+
+| Module | What it does |
 |---|---|
-| Business and GST settings (GSTIN check, PAN, state, monthly or quarterly filing, rates, HSN/SAC) | Settings |
-| Sales: invoices, credit and debit notes, B2B / B2C / B2C large / export classification, amendments of filed bills | Sales |
-| Purchases: supplier bills, categories, per-line ITC eligibility with reasons | Purchases |
-| GST engine: CGST+SGST or IGST, inclusive or exclusive prices, discounts, nil / exempt / non-GST / zero rated, round off | `backend/app/services/gst.py` |
-| ITC: GSTR-2B import and matching, missing and mismatched bills, reversals and reclaims (rules 37, 42, 43, section 17(5)) | Returns → Match with GSTR-2B |
-| GSTR-1: b2b, b2cl, b2cs, exp, cdnr, cdnur, nil, HSN (B2B and B2C), doc issue, amendments; JSON, Excel, PDF, CSV | Returns → GSTR-1 |
-| GSTR-3B: 3.1, 3.2, 4A-4D, 5, 6.1 with legal ITC set-off order; GSTR-1 vs 3B comparison | Returns → GSTR-3B |
-| Monthly return record: approval, payment, ARN, filing date, acknowledgements, period lock | Returns → File and save ARN |
-| 12 reports with FY / month / quarter / date filters; PDF, Excel, CSV, JSON | Reports |
-| Users: owner and accountant roles, sessions, login history, password reset links, audit log | Settings |
-| Import: CSV, XLS, XLSX, JSON, ZIP; templates, column mapping, validation, preview, error report, history, undo | Import from Excel |
-| Documents: bill photos and PDFs linked to records | on each bill, and Documents |
+| Business and GST settings | GSTIN/PAN validation, state, monthly or quarterly filing, rates, HSN/SAC |
+| Customers and suppliers | Master list, GSTIN checks |
+| Sales | Invoices, credit and debit notes, B2B/B2C/B2C large/export, amendments |
+| Purchases | Supplier bills, categories, per-line ITC eligibility with reasons |
+| GST engine | CGST+SGST or IGST, inclusive/exclusive, discounts, nil/exempt/non-GST/zero-rated, round off |
+| ITC | GSTR-2B import and matching, missing and mismatched bills, reversals and reclaims |
+| GSTR-1 | b2b, b2cl, b2cs, exp, cdnr, cdnur, nil, HSN, doc issue, amendments; JSON, Excel, PDF, CSV |
+| GSTR-3B | 3.1, 3.2, 4A–4D, 5, 6.1 with legal set-off order; GSTR-1 vs 3B comparison |
+| Return record | Approval, payment, ARN, filing date, acknowledgements, period lock |
+| Reports | 12 reports with FY/month/quarter/date filters; PDF, Excel, CSV, JSON |
+| Users | Owner and accountant roles, sessions, login history, reset links, audit log |
+| Import | CSV and XLSX for sales, notes, purchases, parties, HSN, payments; preview, errors, undo |
+| Attachments | Upload, list, download and delete bill photos or supplier PDFs (PDF/JPEG/PNG, up to 10 MB) |
+| Backup | Full JSON backup of every table |
 
-### GST notes to confirm with the accountant
-- Outdoor catering (SAC 996334) is set up at **5% without ITC**, the usual rate for standalone outdoor catering (Notification 11/2017-CT(Rate), entry 7). With the "5% without ITC" setting on, purchase GST is marked not claimable. Catering at specified premises is 18% with ITC. All rates are editable.
-- B2C large limit is ₹1,00,000 (from August 2024), editable in Settings.
-- Ineligible credit is shown in 4A and reversed in 4B(1), following Circular 170/02/2022.
-- Export JSON follows the portal's key names (schema label shown on each return). Validate with the GST offline tool before upload; the portal changes formats.
-- Direct filing through a GST Suvidha Provider (Level 2) is an adapter that stays off until a licensed provider is contracted (`backend/app/services/gsp.py`). Filing works through the portal with the downloaded files.
+## Planned stack
 
-## Run it
+- Next.js App Router, React 19, TypeScript strict
+- Drizzle ORM + `postgres` driver, Neon Postgres
+- Neon Object Storage (S3-compatible) via `@aws-sdk/client-s3`
+- Cookie sessions, bcrypt password hashes
+- PDFKit, ExcelJS, `csv-parse`, `fflate`, Zod
+- Vitest + PGlite for tests
+- One hand-written stylesheet
 
-Needs Python 3.11+, Node 20+, and PostgreSQL (Supabase works). SQLite is used if `DATABASE_URL` is not set, which is fine for trying it out.
-
-```bash
-cd backend && pip install -r requirements.txt
-```
-
-```bash
-cd frontend && npm install && npm run build
-```
+## Local setup
 
 ```bash
-cd backend && DATABASE_URL=postgresql+psycopg://user:pass@host:5432/db uvicorn app.main:app --port 8000
+npm install
+cp .env.example .env.local     # set DATABASE_URL and the storage keys
+npm run db:migrate             # apply drizzle/ migrations to Neon
+npm run dev
 ```
 
-Open http://localhost:8000. The first visit asks for the owner's account. To try it with a month of sample data:
+No Neon at hand? Set `DATABASE_URL="pglite:./.data/pglite"` in `.env.local`: an embedded Postgres is
+created and migrated on first use. Attachments need the storage keys; without them uploads show
+"File storage is not configured" and everything else works.
 
-```bash
-cd backend && python -m scripts.demo_data http://127.0.0.1:8000 owner@example.com a-long-password1
-```
+Checks: `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`.
 
-For frontend development, run `npm run dev` in `frontend/` (it proxies `/api` to port 8000) and set `CORS_ORIGINS=http://localhost:5173`.
+Open http://localhost:3000. The first visit asks for the owner's account.
 
-### Settings (environment variables)
+## Deploy
 
-| Variable | Default | |
-|---|---|---|
-| `DATABASE_URL` | SQLite in `backend/data/` | PostgreSQL URL for production (Supabase connection string with `postgresql+psycopg://`) |
-| `STORAGE_BACKEND` | `local` | `supabase` to keep documents in Supabase Storage |
-| `STORAGE_DIR` | `backend/data/files` | for local storage |
-| `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `SUPABASE_BUCKET` | | for Supabase Storage (bucket must exist, private) |
-| `COOKIE_SECURE` | `false` | set `true` behind HTTPS |
-| `SESSION_HOURS` | `12` | |
-| `CORS_ORIGINS` | `http://localhost:5173` | comma separated |
-| `GSP_PROVIDER` | | name of a contracted GSP; leaves Level 2 filing off when empty |
+1. Create a Neon project and copy the **pooled** connection string.
+2. Create a private object storage bucket (the project uses `gst-documents`).
+3. Import this repository in Vercel and add `DATABASE_URL`, `DATABASE_URL_UNPOOLED`,
+   `AWS_ENDPOINT_URL_S3`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, `S3_BUCKET`.
+4. Run `npm run db:migrate` against Neon (locally) before each deploy that changes the schema. Defaults are seeded when the owner account is created.
+5. Deploy.
 
-No credentials are in the code. Tables are created on first start.
-
-### Backups and recovery
-- Use the database host's automatic backups (Supabase daily backups / point-in-time recovery).
-- The owner can also download a full JSON backup of every table from Settings → My account.
-- Every financial change is in the audit log with before and after values. Filed periods are locked; unlocking needs the owner and a written reason.
-
-## Tests
-
-```bash
-cd backend && python -m pytest -q
-```
-
-35 tests cover the GST engine, GSTIN checksum, periods, ITC set-off, GSTR-1/3B figures, amendments and locking, imports with errors and rollback, GSTR-2B matching, reports in every format, roles and sessions. They also pass against PostgreSQL (`DATABASE_URL=... python -m pytest`).
-
-## Layout
-
-```
-backend/app/services   gst.py (engine) · returns.py (GSTR-1/3B) · recon.py (2B) · importers.py · reports.py · exporters.py
-backend/app/api        REST routes (OpenAPI docs at /docs)
-frontend/src/pages     one file per screen
-frontend/DESIGN.md     concept, palette, type
-docs/design.md         architecture and GST rules
-```
+See `docs/spec.md` for the full design and `docs/plan.md` for the build plan.

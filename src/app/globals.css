@@ -1,0 +1,72 @@
+/* One plain stylesheet. No theme, no webfonts, no animation. */
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: #fff; color: #111;
+  font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif;
+}
+a { color: #0645ad; }
+a:visited { color: #0645ad; }
+h1 { font-size: 1.4rem; margin: 0.6rem 0 0.8rem; }
+h2 { font-size: 1.15rem; margin: 1.4rem 0 0.5rem; }
+h3 { font-size: 1rem; margin: 1rem 0 0.4rem; }
+p { margin: 0.4rem 0; }
+small, .muted { color: #555; }
+
+.topbar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; padding: 0.5rem 1rem; border-bottom: 1px solid #ccc; }
+.topbar .name { font-weight: 600; margin-right: auto; }
+.nav { display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; padding: 0.4rem 1rem; border-bottom: 1px solid #ccc; }
+.nav a { text-decoration: none; padding: 0.15rem 0; }
+.nav a.active { font-weight: 600; text-decoration: underline; color: #111; }
+main { padding: 0.5rem 1rem 3rem; max-width: 1200px; }
+.narrow { max-width: 420px; }
+
+label { display: block; font-size: 0.9rem; margin-bottom: 0.15rem; color: #333; }
+input, select, textarea, button { font: inherit; }
+input[type="text"], input[type="email"], input[type="password"], input[type="date"], input[type="number"], input:not([type]), select, textarea {
+  width: 100%; padding: 0.35rem 0.45rem; border: 1px solid #999; border-radius: 4px; background: #fff; color: #111;
+}
+input[type="checkbox"] { width: auto; margin-right: 0.35rem; }
+fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+textarea { min-height: 3.5rem; }
+input:focus, select:focus, textarea:focus, button:focus-visible, a:focus-visible { outline: 2px solid #0645ad; outline-offset: 1px; }
+.field { margin-bottom: 0.7rem; }
+.check { display: flex; align-items: center; margin-bottom: 0.7rem; }
+.check label { margin: 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 1rem; }
+
+button, .button {
+  display: inline-block; padding: 0.35rem 0.8rem; border: 1px solid #777; border-radius: 4px;
+  background: #f4f4f4; color: #111; cursor: pointer; text-decoration: none; font-size: 0.95rem;
+}
+button.primary, .button.primary { background: #0645ad; border-color: #0645ad; color: #fff; }
+button:disabled { opacity: 0.55; cursor: default; }
+button.link { border: 0; background: none; color: #0645ad; padding: 0; text-decoration: underline; }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0.8rem 0; }
+
+.table-wrap { overflow-x: auto; margin: 0.4rem 0 1rem; }
+table { border-collapse: collapse; width: 100%; font-size: 0.92rem; }
+th, td { border: 1px solid #ccc; padding: 0.3rem 0.45rem; text-align: left; vertical-align: top; }
+th { background: #f4f4f4; font-weight: 600; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+tr.total td { font-weight: 600; background: #fafafa; }
+tr.cancelled td { color: #888; text-decoration: line-through; }
+table.lines input, table.lines select { min-width: 4.5rem; padding: 0.25rem 0.3rem; }
+table.lines td { padding: 0.2rem; }
+
+.error { border: 1px solid #b00; color: #b00; padding: 0.4rem 0.6rem; border-radius: 4px; margin: 0.6rem 0; white-space: pre-wrap; }
+.notice { border: 1px solid #999; padding: 0.4rem 0.6rem; border-radius: 4px; margin: 0.6rem 0; }
+.ok { border: 1px solid #070; color: #070; padding: 0.4rem 0.6rem; border-radius: 4px; margin: 0.6rem 0; }
+.stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.6rem; margin: 0.6rem 0; }
+.stat { border: 1px solid #ccc; border-radius: 4px; padding: 0.5rem 0.6rem; }
+.stat b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.box { border: 1px solid #ccc; border-radius: 4px; padding: 0.6rem 0.8rem; margin: 0.8rem 0; }
+.filters { display: flex; flex-wrap: wrap; gap: 0.5rem 0.8rem; align-items: flex-end; margin: 0.5rem 0; }
+.filters .field { margin: 0; min-width: 140px; }
+ul.plain { padding-left: 1.2rem; margin: 0.3rem 0; }
+
+@media print {
+  .topbar, .nav, .actions, .filters { display: none; }
+  main { padding: 0; }
+}
