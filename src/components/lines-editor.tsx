@@ -20,9 +20,9 @@ export interface LineState {
   id?: number;
 }
 
-export const blankLine = (rateBp = 500): LineState => ({
+export const blankLine = (rateBp = 500, itcEligible = true): LineState => ({
   description: "", hsnSac: "", qty: "1", unit: "NOS", unitPrice: "", discount: "", gstRateBp: rateBp,
-  cessRateBp: 0, supplyKind: "taxable", itcEligible: true, itcReason: "",
+  cessRateBp: 0, supplyKind: "taxable", itcEligible, itcReason: "",
 });
 
 export function trimDecimal(s: string): string {
@@ -146,7 +146,7 @@ export function LinesEditor({ lines, setLines, context, itc, disabled }: {
           </tbody>
         </table>
       </div>
-      {!disabled ? <button type="button" onClick={() => setLines([...lines, blankLine(lines[lines.length - 1]?.gstRateBp)])}>Add line</button> : null}
+      {!disabled ? <button type="button" onClick={() => setLines([...lines, blankLine(lines[lines.length - 1]?.gstRateBp, !(itc && meta.business.noItcScheme))])}>Add line</button> : null}
       {ready && calcError ? <p className="muted">Preview: {calcError}</p> : null}
       {shown ? (
         <div className="table-wrap" style={{ maxWidth: 420 }}>

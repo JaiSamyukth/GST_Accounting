@@ -33,7 +33,7 @@ export function PurchaseEditor({ existing }: { existing?: { doc: PDoc; lines: PL
     description: l.description, hsnSac: l.hsnSac, qty: trimDecimal(l.qty), unit: l.unit, unitPrice: trimDecimal(l.unitPrice),
     discount: l.discount ? rupeesInput(l.discount) : "", gstRateBp: l.gstRateBp, cessRateBp: l.cessRateBp, supplyKind: l.supplyKind,
     itcEligible: l.itcEligible, itcReason: l.itcReason, id: l.id,
-  })) : [blankLine()]);
+  })) : [blankLine(500, !meta.business.noItcScheme)]);
   const [parties, setParties] = useState<Party[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(() => (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("saved") ? "Saved." : null));
@@ -136,7 +136,7 @@ export function PurchaseEditor({ existing }: { existing?: { doc: PDoc; lines: PL
             {f.docType !== "invoice" ? <Field label="Original bill number"><input value={f.originalNumber} onChange={(e) => set("originalNumber", e.target.value)} /></Field> : null}
           </div>
           <Check label="Reverse charge (you pay the GST)" checked={f.reverseCharge} onChange={(v) => set("reverseCharge", v)} />
-          {meta.business.noItcScheme ? <div className="notice">Your business pays GST without input tax credit, so no ITC is claimed on any bill.</div> : null}
+          {meta.business.noItcScheme ? <div className="notice">Your business pays GST at 5% without input tax credit, so new lines start with ITC unticked. Tick a line only if that purchase really is claimable.</div> : null}
           {blocked ? <div className="notice">This category is blocked under section 17(5): ITC is shown in 4A(5) and reversed in 4B(1).</div> : null}
           <h2>Items</h2>
           <LinesEditor lines={lines} setLines={setLines} itc disabled={cancelled}

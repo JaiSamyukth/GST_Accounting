@@ -1,4 +1,4 @@
-# GST-Invoice — setup and daily use
+# GST Accounting — setup and daily use
 
 This guide takes you from nothing to a working app on the internet, then explains how to use it each month.
 You need about 30 minutes for the setup. No programming is needed except copying and pasting a few lines.
@@ -61,8 +61,8 @@ You now have five values: endpoint, key ID, secret, region, bucket name.
 Do this once on your computer.
 
 ```bash
-git clone https://github.com/JaiSamyukth/GST-Invoice.git
-cd GST-Invoice
+git clone https://github.com/JaiSamyukth/GST_Accounting.git
+cd GST_Accounting
 npm install
 cp .env.example .env.local
 ```
@@ -106,9 +106,9 @@ That runs a small built-in database on your computer. It is for trying things ou
 
 ## Part D — Put it online (Vercel)
 
-1. Push the code to your GitHub account (it is already there if you cloned `JaiSamyukth/GST-Invoice`).
+1. Push the code to your GitHub account (it is already there: `JaiSamyukth/GST_Accounting`).
 2. Go to <https://vercel.com>, sign in with GitHub, click **Add New… → Project**, and **Import** the
-   `GST-Invoice` repository. Vercel detects Next.js; leave the build settings as they are.
+   `GST_Accounting` repository. Vercel detects Next.js; leave the build settings as they are.
 3. Before clicking Deploy, open **Environment Variables** and add each of these
    (same values as `.env.local`, except the last three):
 

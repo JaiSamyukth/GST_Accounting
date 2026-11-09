@@ -33,7 +33,7 @@ export async function buildBackup(db: Db): Promise<Uint8Array> {
   files["users.json"] = strToU8(JSON.stringify(userRows, null, 1));
   files["manifest.json"] = strToU8(JSON.stringify({ app: "gst-invoice", version: BACKUP_VERSION, takenAt: new Date().toISOString(), tables: counts }, null, 1));
   files["README.txt"] = strToU8(
-    `GST-Invoice backup taken ${new Date().toISOString()}.\nMoney values are integer paise; rates are basis points.\n` +
+    `GST Accounting backup taken ${new Date().toISOString()}.\nMoney values are integer paise; rates are basis points.\n` +
     "Attachments themselves are in object storage; documents.json lists their keys.\n" +
     "users.json is for reference only: user accounts and passwords are not restored.\n",
   );
@@ -76,7 +76,7 @@ export async function restoreBackup(db: Db, user: Pick<SessionUser, "id" | "emai
   if (manifest && (manifest.app !== "gst-invoice" || (manifest.version ?? 0) > BACKUP_VERSION)) {
     throw unprocessable("This backup is from a different or newer application version");
   }
-  if (!files["business.json"] || !files["sales_docs.json"]) throw unprocessable("This ZIP is not a GST-Invoice backup");
+  if (!files["business.json"] || !files["sales_docs.json"]) throw unprocessable("This ZIP is not a GST Accounting backup");
   const data = new Map<string, Record<string, unknown>[]>();
   for (const [name] of BACKUP_TABLES) {
     const rows = read(`${name}.json`) ?? [];

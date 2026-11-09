@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
-export const metadata: Metadata = { title: "GST-Invoice", description: "GST accounts for one business" };
+export const metadata: Metadata = { title: "GST Accounting", description: "GST accounts for one business" };
 export const viewport: Viewport = { width: "device-width", initialScale: 1 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

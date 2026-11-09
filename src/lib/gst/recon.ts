@@ -43,6 +43,26 @@ function close(a: ReconDoc, b: ReconDoc, tol: number): boolean {
   return HEADS.every((h) => Math.abs(a[h] - b[h]) <= tol);
 }
 
+/** Edit distance, for spotting typos in invoice numbers. */
+export function editDistance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/** Numbers that look like the same invoice typed differently: same digits, or at most two typos. */
+export function similarNumbers(a: string, b: string): boolean {
+  const na = normaliseNumber(a);
+  const nb = normaliseNumber(b);
+  const digits = (s: string) => s.replace(/\D/g, "");
+  return (digits(na) !== "" && digits(na) === digits(nb)) || editDistance(na, nb) <= 2;
+}
+
 function daysApart(a: string, b: string): number {
   return Math.abs(Date.parse(a) - Date.parse(b)) / 86_400_000;
 }
@@ -69,10 +89,11 @@ export function reconcile(books: ReconDoc[], twoB: Array<ReconDoc & { itcAvailab
     out.push({ status: ok ? "matched" : "mismatch", book: b, twoB: cand, diff: diffOf(b, cand), note: notes.join("; ") });
   }
 
-  // Probable: same supplier and type, amounts agree, number differs, dates within 10 days.
+  // Probable: same supplier and type, amounts agree, dates within 10 days, and the numbers look like
+  // the same invoice typed differently. Equal amounts alone are not enough to claim ITC on.
   for (const b of pending) {
     const cand = twoB.find((r) => !used.has(r) && r.supplierGstin.toUpperCase() === b.supplierGstin.toUpperCase()
-      && r.docType === b.docType && close(b, r, tol) && daysApart(r.date, b.date) <= 10);
+      && r.docType === b.docType && close(b, r, tol) && daysApart(r.date, b.date) <= 10 && similarNumbers(r.number, b.number));
     if (cand) {
       used.add(cand);
       out.push({ status: "probable", book: b, twoB: cand, diff: diffOf(b, cand), note: `Number differs: books ${b.number}, 2B ${cand.number}` });

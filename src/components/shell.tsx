@@ -73,7 +73,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <Ctx.Provider value={{ me, meta, refreshMeta: () => setTick((t) => t + 1) }}>
       <div className="topbar">
-        <span className="name">{meta.business.tradeName || meta.business.legalName || "GST-Invoice"}</span>
+        <span className="name">{meta.business.tradeName || meta.business.legalName || "GST Accounting"}</span>
         <span className="muted">{me.name} ({me.role})</span>
         <button className="link" onClick={signOut}>Sign out</button>
       </div>

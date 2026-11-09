@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, ilike, inArray, isNull, like, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import type { Db, Tx } from "../db/client";
 import { purchaseLines, purchases, salesDocs, salesLines } from "../db/schema";
 import { audit } from "./audit";
@@ -9,6 +9,8 @@ import {
 import { calcDocument, classifySalesDoc, isIntraState, type DocumentResult } from "./gst/gst";
 import { periodOf, periodRange } from "./gst/periods";
 import { BLOCKED_REASON } from "./gst/returns";
+
+export const NO_ITC_REASON = "Business pays GST without ITC";
 import { conflict, notFound, unprocessable } from "./http";
 import { assertUnlocked } from "./locks";
 import { formatScaled, parseScaled } from "./money";
@@ -44,19 +46,46 @@ export function computeSale(input: SaleInput, biz: Business): { calc: DocumentRe
 
 const NOTE_PREFIX = { invoice: "", credit_note: "CN-", debit_note: "DN-" } as const;
 
+/** "DC/26-27/009" -> "DC/26-27/010"; null when the number has no digits to increase. */
+export function bumpNumber(n: string): string | null {
+  const m = /^(.*?)(\d+)(\D*)$/.exec(n);
+  if (!m) return null;
+  return m[1] + String(Number(m[2]) + 1).padStart(m[2].length, "0") + m[3];
+}
+
+/**
+ * Suggest the next number. With documents already in the configured prefix's series, continue
+ * that series. Otherwise, while the prefix is still the default, continue the business's own
+ * numbering from its latest document (e.g. DC/26-27/003 -> DC/26-27/004). A new prefix set in
+ * Settings starts a fresh series.
+ */
 export async function nextSalesNumber(db: Tx, docType: SaleInput["docType"]): Promise<string> {
   const biz = await getBusiness(db);
   const prefix = docType === "invoice" ? biz.invoicePrefix : NOTE_PREFIX[docType];
-  const rows = await db
-    .select({ number: salesDocs.number })
-    .from(salesDocs)
-    .where(and(eq(salesDocs.docType, docType), like(salesDocs.number, `${prefix.replace(/[%_]/g, "\\$&")}%`)));
-  let max = 0;
-  for (const r of rows) {
-    const m = /(\d+)$/.exec(r.number.slice(prefix.length));
-    if (m) max = Math.max(max, Number(m[1]));
+  const all = await db.select({ number: salesDocs.number }).from(salesDocs)
+    .where(and(eq(salesDocs.docType, docType), isNull(salesDocs.amendsId)))
+    .orderBy(desc(salesDocs.date), desc(salesDocs.id));
+  const used = new Set(all.map((r) => r.number));
+  const inSeries = prefix ? all.filter((r) => r.number.startsWith(prefix)) : [];
+  let candidate: string;
+  if (inSeries.length) {
+    let max = 0;
+    let width = 4;
+    for (const r of inSeries) {
+      const m = /(\d+)$/.exec(r.number.slice(prefix.length));
+      if (m && Number(m[1]) >= max) {
+        max = Number(m[1]);
+        width = m[1].length;
+      }
+    }
+    candidate = `${prefix}${String(max + 1).padStart(width, "0")}`;
+  } else if (all.length && (docType !== "invoice" || biz.invoicePrefix === "INV-")) {
+    candidate = bumpNumber(all[0].number) ?? `${prefix}0001`;
+  } else {
+    candidate = `${prefix}0001`;
   }
-  return `${prefix}${String(max + 1).padStart(4, "0")}`;
+  for (let guard = 0; used.has(candidate) && guard < 10_000; guard++) candidate = bumpNumber(candidate) ?? `${candidate}-1`;
+  return candidate;
 }
 
 function saleValues(input: SaleInput, calc: DocumentResult, section: string, pos: string) {
@@ -269,10 +298,12 @@ export function computePurchase(input: PurchaseInput, biz: Business) {
   });
   const blocked = PURCHASE_CATEGORIES[input.category].blocked;
   const eligibility = input.lines.map((l) => {
-    if (biz.noItcScheme) return { itcEligible: false, itcReason: "Business pays GST without ITC" };
     if (!input.supplierGstin) return { itcEligible: false, itcReason: "Supplier is unregistered" };
     if (blocked) return { itcEligible: false, itcReason: BLOCKED_REASON };
-    return { itcEligible: l.itcEligible, itcReason: l.itcEligible ? "" : l.itcReason || "Marked ineligible" };
+    // The 5% no-ITC scheme sets the default; a line can still be marked claimable explicitly.
+    if (l.itcEligible === undefined && biz.noItcScheme) return { itcEligible: false, itcReason: NO_ITC_REASON };
+    const claim = l.itcEligible ?? true;
+    return { itcEligible: claim, itcReason: claim ? "" : l.itcReason || "Marked ineligible" };
   });
   let itcTotal = 0;
   calc.lines.forEach((l, i) => {
@@ -390,7 +421,6 @@ export async function updatePurchaseItc(
     if (periodRange(newPeriod).to < before.doc.date) throw unprocessable("ITC period cannot be before the bill date");
     await assertUnlocked(tx, biz.filingFrequency, { dates: [before.doc.date], periods: [before.doc.itcPeriod, newPeriod] });
     if (change.lines?.length) {
-      if (biz.noItcScheme && change.lines.some((l) => l.itcEligible)) throw unprocessable("The business pays GST without ITC");
       if (!before.doc.supplierGstin && change.lines.some((l) => l.itcEligible)) throw unprocessable("No ITC on a bill from an unregistered supplier");
       const ids = new Set(before.lines.map((l) => l.id));
       for (const l of change.lines) {

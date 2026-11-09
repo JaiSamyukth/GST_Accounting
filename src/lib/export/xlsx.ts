@@ -5,7 +5,7 @@ const INR_FORMAT = "[>=10000000]##\\,##\\,##\\,##0.00;[>=100000]##\\,##\\,##0.00
 
 export async function toXlsx(tables: Table[]): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook();
-  wb.creator = "GST-Invoice";
+  wb.creator = "GST Accounting";
   const used = new Set<string>();
   for (const t of tables) {
     let name = t.title.replace(/[\\/?*[\]:]/g, " ").slice(0, 31) || "Sheet";

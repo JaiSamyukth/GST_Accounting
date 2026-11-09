@@ -61,7 +61,7 @@ export function BusinessSection() {
         </div>
         <Field label="Address"><textarea value={v.address} onChange={(e) => set("address", e.target.value)} /></Field>
         <Check label="Round invoice totals to the nearest rupee" checked={v.roundOff} onChange={(x) => set("roundOff", x)} />
-        <Check label="We pay GST at 5% without input tax credit (no ITC on any bill)" checked={v.noItcScheme} onChange={(x) => set("noItcScheme", x)} />
+        <Check label="We pay GST at 5% without input tax credit (purchase lines start with ITC unticked)" checked={v.noItcScheme} onChange={(x) => set("noItcScheme", x)} />
       </fieldset>
       <Err error={a.error} /><Ok message={a.ok} />
       {owner ? <button className="primary">Save business settings</button> : <p className="muted">Only the owner can change these.</p>}

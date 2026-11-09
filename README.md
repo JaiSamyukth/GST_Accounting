@@ -1,4 +1,4 @@
-# GST-Invoice
+# GST Accounting
 
 GST accounting for Dev Caters, Trichy — rebuilt as a single Next.js application for Vercel, with Neon Postgres and Neon Object Storage.
 

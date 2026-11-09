@@ -1,4 +1,4 @@
-# GST-Invoice — implementation plan
+# GST Accounting — implementation plan
 
 Companion to `docs/spec.md`. Work proceeds in phases; each phase ends with a commit and the
 gate checks green (`typecheck`, `lint`, `test`, `build`). No phase starts before the prior one

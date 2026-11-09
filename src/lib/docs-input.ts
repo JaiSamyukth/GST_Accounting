@@ -55,7 +55,8 @@ export const lineSchema = z.object({
 });
 
 export const purchaseLineSchema = lineSchema.extend({
-  itcEligible: z.boolean().default(true),
+  /** Leave out to use the default: claim, unless the business is on the 5% no-ITC scheme. */
+  itcEligible: z.boolean().optional(),
   itcReason: z.string().max(200).default(""),
 });
 

@@ -4,7 +4,7 @@ import type { Db } from "../db/client";
 import { documents, purchases, returnPeriods, parties, salesDocs } from "../db/schema";
 import { audit } from "./audit";
 import type { SessionUser } from "./auth";
-import { HttpError, notFound, unprocessable } from "./http";
+import { conflict, HttpError, notFound, unprocessable } from "./http";
 import { getStorage, StorageUnavailableError } from "./storage";
 
 export { MAX_FILE_BYTES as MAX_UPLOAD_BYTES } from "./limits";
@@ -59,6 +59,10 @@ export async function uploadDocument(
   if (input.bytes.byteLength > MAX_FILE_BYTES) throw new HttpError(413, `File is larger than ${MAX_FILE_LABEL}`);
   const t = sniff(input.filename, input.mime, input.bytes);
   await assertEntity(db, input.entityType, input.entityId);
+  const checksum = createHash("sha256").update(input.bytes).digest("hex");
+  const dup = await db.select({ id: documents.id }).from(documents)
+    .where(and(eq(documents.entityType, input.entityType), eq(documents.entityId, input.entityId), eq(documents.checksum, checksum))).limit(1);
+  if (dup.length) throw conflict("This file is already attached here");
   const key = `${input.entityType}/${input.entityId}/${randomUUID()}.${t.ext}`;
   try {
     await getStorage().put(key, input.bytes, t.mime);
@@ -70,7 +74,7 @@ export async function uploadDocument(
   const [row] = await db.insert(documents).values({
     entityType: input.entityType, entityId: input.entityId, kind: input.kind,
     filename: input.filename.slice(0, 200), mimeType: t.mime, sizeBytes: input.bytes.byteLength,
-    objectKey: key, checksum: createHash("sha256").update(input.bytes).digest("hex"), uploadedBy: user.id,
+    objectKey: key, checksum, uploadedBy: user.id,
   }).returning();
   await audit(db, user, { action: "upload", entityType: "document", entityId: row.id, summary: `${row.filename} on ${row.entityType} ${row.entityId}` });
   return row;

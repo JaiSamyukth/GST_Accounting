@@ -1,8 +1,8 @@
-# GST-Invoice — design specification
+# GST Accounting — design specification
 
 Status: implemented (see section 18). Date: 8 November 2026.
 
-Rebuild of `D:\Projects\GST_Accounting` (FastAPI + React/Vite + SQLite/Postgres) as a single
+Rebuild of this repository's earlier FastAPI + React/Vite + SQLite/Postgres app (kept in git history) as a single
 Next.js application on Vercel with Neon Postgres and Neon Object Storage. Behaviour is preserved;
 the stack, where attachments live and the visual treatment are new.
 
@@ -57,7 +57,7 @@ Full feature parity with the old application, except where section 4 says otherw
 | Zod validation at every boundary | Replaces Pydantic |
 | Vitest + PGlite replaces pytest | In-process Postgres for integration tests; no external DB needed |
 
-The old `GST_Accounting` folder is left untouched.
+The earlier app's code is no longer in the working tree; it remains in this repository's git history.
 
 ## 5. Architecture
 
@@ -438,6 +438,13 @@ Decisions made while building:
 - **Upload size.** Vercel functions refuse request bodies over about 4.5 MB, so every upload (attachments, imports,
   GSTR-2B, restore) is capped at **4 MB** (`src/lib/limits.ts`), down from the 10/20 MB in sections 5, 12 and 14.1.
   The browser shrinks photos over 4 MB to at most 2000 px JPEG before uploading.
+- **Parity with the earlier app.** Its test suite is ported in `tests/legacy-parity.test.ts`; every figure it checked
+  matches. Behaviours adopted from it: the 5% no-ITC scheme sets the *default* for purchase lines (a line can still be
+  marked claimable); suggested sales numbers continue the business's own series (`DC/26-27/003` → `DC/26-27/004`)
+  unless a new prefix is set; imports accept a line's taxable value (with CGST/SGST/IGST columns checked within ₹1) in
+  place of a rate per unit, and reject GST rates not in the rate list; the same file cannot be attached twice to one
+  record. A GSTR-2B "probable" match now also needs near-identical invoice numbers (same digits or at most two typos),
+  so equal amounts alone never claim ITC on a different bill.
 - **Local development** may set `DATABASE_URL="pglite:./.data/pglite"` to run an embedded Postgres that
   migrates itself. Production uses Neon. Apply migrations with `npm run db:migrate`.
 - `npm run user:reset-link -- <email>` prints a reset link from the command line (owner recovery).

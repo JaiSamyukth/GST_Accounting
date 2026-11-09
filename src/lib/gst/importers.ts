@@ -1,8 +1,9 @@
 // Bulk import: kinds, header mapping, coercion, validation and grouping. Pure functions.
 import { z, ZodError } from "zod";
 import { partySchema, hsnSchema } from "../masters";
-import { purchaseSchema, saleSchema, type PurchaseInput, type SaleInput } from "../docs-input";
-import { paise } from "../money";
+import { purchaseSchema, saleSchema, toEngineLine, type PurchaseInput, type SaleInput } from "../docs-input";
+import { formatINR, formatScaled, paise, parseScaled, roundHalfUp } from "../money";
+import { calcLine, isIntraState, type CalcContext } from "./gst";
 import { STATES } from "./gstin";
 import { isIsoDate, isPeriodKey } from "./periods";
 import { normHeader, type RawTable } from "./tabular";
@@ -15,13 +16,17 @@ export interface FieldDef { key: string; label: string; required?: boolean; alia
 const lineFields: FieldDef[] = [
   { key: "description", label: "Item description", required: true, aliases: ["item", "particulars", "itemname", "product", "service"], example: "Wedding lunch" },
   { key: "hsn_sac", label: "HSN/SAC", aliases: ["hsn", "sac", "hsncode", "hsnsac"], example: "996334" },
-  { key: "qty", label: "Quantity", aliases: ["quantity", "nos"], example: "100" },
+  { key: "qty", label: "Quantity", aliases: ["quantity", "nos", "members", "plates", "pax", "persons"], example: "100" },
   { key: "unit", label: "Unit (UQC)", aliases: ["uqc", "uom"], example: "OTH" },
-  { key: "rate", label: "Rate per unit (₹)", required: true, aliases: ["price", "unitprice", "unitrate"], example: "250" },
+  { key: "rate", label: "Rate per unit (₹) — or give the taxable value instead", aliases: ["price", "unitprice", "unitrate"], example: "250" },
   { key: "discount", label: "Discount (₹)", aliases: ["disc"], example: "0" },
   { key: "gst_rate", label: "GST rate (%)", required: true, aliases: ["gst", "gstpercent", "taxrate", "rateofgst"], example: "5" },
   { key: "cess_rate", label: "Cess rate (%)", aliases: ["cess"], example: "0" },
   { key: "supply_kind", label: "Supply kind (taxable/nil/exempt/non_gst/zero_rated)", aliases: ["kind", "supplytype"], example: "taxable" },
+  { key: "taxable_value", label: "Taxable value of the line (₹), instead of a rate per unit", aliases: ["taxable", "taxableamount", "assessablevalue", "valuebeforetax"], example: "" },
+  { key: "cgst", label: "CGST amount (₹), checked if given", aliases: ["cgstamount", "centraltax"], example: "" },
+  { key: "sgst", label: "SGST amount (₹), checked if given", aliases: ["sgstamount", "statetax", "sgstutgst"], example: "" },
+  { key: "igst", label: "IGST amount (₹), checked if given", aliases: ["igstamount", "integratedtax"], example: "" },
 ];
 
 const saleDocFields: FieldDef[] = [
@@ -65,7 +70,7 @@ const purchaseFields: FieldDef[] = [
 ];
 
 const partyFields: FieldDef[] = [
-  { key: "name", label: "Name", required: true, aliases: ["party", "partyname", "customer", "supplier", "customername", "suppliername"], example: "Kumar Weddings" },
+  { key: "name", label: "Name", required: true, aliases: ["party", "partyname", "client", "customer", "supplier", "customername", "suppliername"], example: "Kumar Weddings" },
   { key: "gstin", label: "GSTIN", aliases: ["gstinuin"], example: "" },
   { key: "state", label: "State (code or name)", aliases: ["statecode", "pos"], example: "33" },
   { key: "address", label: "Address", example: "" },
@@ -109,7 +114,13 @@ export const KINDS: Record<ImportKind, { label: string; fields: FieldDef[] }> = 
 export type Mapping = Record<string, number>; // field key -> column index (-1 = not mapped)
 
 export function autoMap(kind: ImportKind, headers: string[]): Mapping {
-  return autoMapFields(KINDS[kind].fields, headers);
+  const m = autoMapFields(KINDS[kind].fields, headers);
+  // In accounting exports with a "Taxable" column, a bare "Rate" column is the GST rate, not a price.
+  if (m.taxable_value >= 0 && m.gst_rate < 0 && m.rate >= 0 && normHeader(headers[m.rate]) === "rate") {
+    m.gst_rate = m.rate;
+    m.rate = -1;
+  }
+  return m;
 }
 
 export function autoMapFields(fields: FieldDef[], headers: string[]): Mapping {
@@ -193,7 +204,13 @@ export interface ValidateResult {
   errorRows: Set<number>;
 }
 
-interface Ctx { businessState: string }
+interface Ctx {
+  businessState: string;
+  /** Active GST rates in basis points; taxable lines must use one of them. */
+  rates?: number[];
+}
+
+const TAX_TOLERANCE = 100; // ₹1 per head, for rounding in other software
 
 /** Row accessor: sheet row number and field getter. */
 interface R { n: number; get: (key: string) => string }
@@ -203,13 +220,29 @@ function zodMessages(e: ZodError): string[] {
 }
 
 function lineFrom(r: R) {
+  const qty = r.get("qty") || "1";
+  let unitPrice = r.get("rate").replace(/,/g, "");
+  let discount = rupees(r.get("discount"));
+  const taxable = r.get("taxable_value");
+  if (!unitPrice && taxable) {
+    // Work back from the line's taxable value: the smallest 4-decimal rate whose amount covers it,
+    // with any sub-paisa excess taken off as a discount so the taxable value is exact.
+    const qtyMilli = parseScaled(qty, 3);
+    if (qtyMilli <= 0) throw new Error("Quantity must be more than zero");
+    const target = rupees(taxable) + discount;
+    const priceE4 = Math.ceil((target * 100_000) / qtyMilli);
+    const gross = roundHalfUp(BigInt(qtyMilli) * BigInt(priceE4), 100_000n);
+    discount += gross - target;
+    unitPrice = formatScaled(priceE4, 4);
+  }
+  if (!unitPrice) throw new Error("Give the rate per unit or the taxable value");
   return {
     description: r.get("description"),
     hsnSac: r.get("hsn_sac").replace(/\.0+$/, ""),
-    qty: r.get("qty") || "1",
+    qty,
     unit: (r.get("unit") || "NOS").toUpperCase(),
-    unitPrice: r.get("rate").replace(/,/g, ""),
-    discount: String(rupees(r.get("discount")) / 100),
+    unitPrice,
+    discount: formatScaled(discount, 2),
     gstRateBp: parsePercent(r.get("gst_rate")),
     cessRateBp: parsePercent(r.get("cess_rate")),
     supplyKind: (r.get("supply_kind") || "taxable").toLowerCase().replace(/[\s-]+/g, "_"),
@@ -296,10 +329,11 @@ export function validateTable(kind: ImportKind, table: RawTable, mapping: Mappin
             priceMode: (head.get("price_mode") || "exclusive").toLowerCase(),
             category: (head.get("category") || "goods").toLowerCase(),
             itcPeriod: head.get("itc_period") || undefined, notes: head.get("notes"), originalNumber: head.get("original_number"),
-            lines: lines.map((l, i) => ({ ...l, itcEligible: parseBool(g[i].get("itc_eligible"), true), itcReason: g[i].get("itc_reason") })),
+            lines: lines.map((l, i) => ({ ...l, itcEligible: g[i].get("itc_eligible") ? parseBool(g[i].get("itc_eligible")) : undefined, itcReason: g[i].get("itc_reason") })),
           };
           const p = purchaseSchema.safeParse(raw);
-          if (!p.success) throw new Error(zodMessages(p.error).join("; "));
+          if (!p.success) throw new Error([...rateProblems(lines, g, ctx), ...zodMessages(p.error)].join("; "));
+          checkLines(p.data.lines, g, ctx, { intraState: p.data.supplierStateCode === ctx.businessState, priceMode: p.data.priceMode });
           records.push({ rows: ns, label: `${p.data.supplierName} ${p.data.number}`, record: { type: "purchase", input: p.data } });
         } else {
           const gstin = head.get("customer_gstin").replace(/\s+/g, "").toUpperCase();
@@ -314,7 +348,11 @@ export function validateTable(kind: ImportKind, table: RawTable, mapping: Mappin
             lines,
           };
           const p = saleSchema.safeParse(raw);
-          if (!p.success) throw new Error(zodMessages(p.error).join("; "));
+          if (!p.success) throw new Error([...rateProblems(lines, g, ctx), ...zodMessages(p.error)].join("; "));
+          checkLines(p.data.lines, g, ctx, {
+            intraState: isIntraState(p.data.isExport ? "96" : p.data.placeOfSupply, ctx.businessState, p.data.isExport),
+            priceMode: p.data.priceMode, isExport: p.data.isExport, exportWithIgst: p.data.exportWithIgst,
+          });
           records.push({ rows: ns, label: `${p.data.docType.replace("_", " ")} ${p.data.number}`, record: { type: "sale", input: p.data } });
         }
       } catch (e) {
@@ -362,6 +400,31 @@ export function validateTable(kind: ImportKind, table: RawTable, mapping: Mappin
     }
   }
   return { records, errors, errorRows };
+}
+
+/** GST rate must be one of the business's rates; tax amounts in the file must match what we compute. */
+function rateProblems(lines: Array<{ gstRateBp: number; supplyKind: string }>, rows: R[], ctx: Ctx): string[] {
+  if (!ctx.rates) return [];
+  return lines.flatMap((l, i) => (l.supplyKind === "taxable" && !ctx.rates!.includes(l.gstRateBp)
+    ? [`row ${rows[i].n}: GST rate ${l.gstRateBp / 100}% is not one of your tax rates (Settings → Tax rates)`] : []));
+}
+
+function checkLines(lines: SaleInput["lines"], rows: R[], ctx: Ctx, calc: CalcContext): void {
+  const problems: string[] = rateProblems(lines, rows, ctx);
+  lines.forEach((l, i) => {
+    const r = rows[i];
+    const given = { cgst: r.get("cgst"), sgst: r.get("sgst"), igst: r.get("igst") };
+    if (!given.cgst && !given.sgst && !given.igst) return;
+    const c = calcLine(toEngineLine(l), calc, i);
+    for (const [head, raw] of Object.entries(given) as Array<[keyof typeof given, string]>) {
+      if (!raw) continue;
+      const fileAmt = rupees(raw);
+      if (Math.abs(fileAmt - c[head]) > TAX_TOLERANCE) {
+        problems.push(`row ${r.n}: Tax should be ${formatINR(c[head])} ${head.toUpperCase()}, the file has ${formatINR(fileAmt)}`);
+      }
+    }
+  });
+  if (problems.length) throw new Error(problems.join("; "));
 }
 
 export function templateRows(kind: ImportKind): { headers: string[]; example: string[] } {

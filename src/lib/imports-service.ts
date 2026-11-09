@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Db, Tx } from "../db/client";
-import { hsnCodes, importBatches, parties, purchases, returnPeriods, salesDocs } from "../db/schema";
+import { hsnCodes, importBatches, parties, purchases, returnPeriods, salesDocs, taxRates } from "../db/schema";
 import { audit } from "./audit";
 import type { SessionUser } from "./auth";
 import { insertPurchase, insertSale } from "./docs";
@@ -36,7 +36,8 @@ export type Analysed = Grouped & { updateId?: number };
 export async function analyse(db: Tx, kind: ImportKind, table: RawTable, mappingIn?: Mapping, opts: { update?: boolean } = {}) {
   const biz = await getBusiness(db);
   const mapping = { ...autoMap(kind, table.headers), ...(mappingIn ?? {}) };
-  const v = validateTable(kind, table, mapping, { businessState: biz.stateCode });
+  const rates = (await db.select({ bp: taxRates.rateBp }).from(taxRates).where(eq(taxRates.active, true))).map((r) => r.bp);
+  const v = validateTable(kind, table, mapping, { businessState: biz.stateCode, rates });
   const extra: RowError[] = [];
   const reject = (rows: number[], message: string) => rows.forEach((row) => extra.push({ row, message }));
 

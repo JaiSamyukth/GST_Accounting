@@ -1,4 +1,4 @@
-# AGENTS.md — GST-Invoice
+# AGENTS.md — GST Accounting
 
 Instructions for coding agents working in this repository. Read `docs/spec.md` and `docs/plan.md` first.
 
