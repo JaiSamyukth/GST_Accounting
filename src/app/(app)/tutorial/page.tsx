@@ -77,6 +77,7 @@ const STEPS: Step[] = [
         <li><b>After the month is filed:</b> the invoice is locked. Open it and click <b>Amend</b>. The correction is reported in the month you are filing now.</li>
       </ul>
     ),
+    action: { href: "/sales", label: "Open Sales" },
   },
   {
     title: "Enter a purchase bill",
@@ -106,11 +107,10 @@ const STEPS: Step[] = [
     title: "Month end, part 1: check",
     body: (
       <>
-        <p>After the month ends, open <b>Returns</b> and click the month. Work down the numbered steps:</p>
+        <p>After the month ends, open <b>Returns</b> and click the month. The page has five numbered steps. Parts 1 and 2 of this tutorial walk through them.</p>
         <ol>
-          <li>Read any notices at the top and fix them (for example a missing HSN code).</li>
-          <li>On the GST portal, download <b>GSTR-2B</b> for the month (Returns → GSTR-2B → Download JSON) and load it in step 2. The app shows which supplier bills match, which differ, and which are missing.</li>
-          <li>Make sure the <b>GSTR-1 vs GSTR-3B</b> check shows no differences.</li>
+          <li><b>1. Check:</b> fix anything listed (for example a missing HSN code), and make sure it says <b>GSTR-1 and GSTR-3B agree</b>.</li>
+          <li><b>2. Match supplier bills with GSTR-2B</b> (recommended): on the GST portal, download <b>GSTR-2B</b> for the month (Returns → GSTR-2B → Download JSON) and load it here. The app shows which supplier bills match, which differ, and which are missing.</li>
         </ol>
       </>
     ),
@@ -120,12 +120,13 @@ const STEPS: Step[] = [
     title: "Month end, part 2: file",
     body: (
       <ol>
-        <li>The owner clicks <b>Approve</b>.</li>
-        <li>Download the <b>GSTR-1 JSON</b>. On the GST portal open GSTR-1 → <b>Prepare offline</b> → <b>Upload</b>, check the summary, then submit and file.</li>
-        <li>Download the <b>GSTR-3B PDF</b> and use it to fill GSTR-3B on the portal. Pay any tax due, then file.</li>
-        <li>Back in the app, type each <b>ARN</b> (the acknowledgement number from the portal) and mark the returns filed. The month then <b>locks</b>, so filed figures cannot change by accident.</li>
+        <li><b>3. Approve:</b> the owner clicks <b>Approve</b>.</li>
+        <li><b>4. File on the GST portal:</b> click <b>Download GSTR-1 file (JSON)</b>. On the GST portal open GSTR-1 → <b>Prepare offline</b> → <b>Upload</b>, check the summary, then submit and file. Then click <b>Download GSTR-3B (PDF)</b> and use it to fill GSTR-3B on the portal. Pay any tax due, then file.</li>
+        <li>Still in step 4, type each <b>ARN</b> (the acknowledgement number the portal shows) and click <b>Save GSTR-1 ARN</b> and <b>Save GSTR-3B ARN</b>. When both are saved, the month <b>locks</b>, so filed figures cannot change by accident.</li>
+        <li><b>5. Record the payment</b> (optional): note the tax you paid and the challan number, so your records match the portal.</li>
       </ol>
     ),
+    action: { href: "/returns", label: "Open Returns" },
   },
   {
     title: "Reports, Excel and importing",

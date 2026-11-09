@@ -261,6 +261,8 @@ Plain, utilitarian, and readable at 360 px.
   Home, month-end check, filing, reports/import, users/backup, done). It opens after owner setup and on each user's
   first sign-in (`users.tutorial_done`), can be skipped, resumes where it was left (a banner links back), and is
   reachable from Settings and More.
+  Steps that describe a page have a button that opens it; the month-end steps use the same numbered
+  names as the Returns page (1 Check to 5 Record the payment).
 - Tables: bordered, compact, right-aligned numbers using tabular numerals.
 - Forms: label above field, native inputs, one primary button per screen.
 - Numbers: plain inputs accepting rupees with two decimals; stored as paise.
