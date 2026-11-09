@@ -10,30 +10,37 @@ export function ListFilters({ f, set, periods, extra }: {
 }) {
   const up = (k: keyof Filters) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => set({ ...f, [k]: e.target.value, page: 1 });
   return (
-    <div className="filters">
-      <Field label="Period">
-        <select value={f.period} onChange={up("period")}>
-          <option value="">Custom dates</option>
-          {periods.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-        </select>
-      </Field>
-      {!f.period ? (
-        <>
-          <Field label="From"><input type="date" value={f.from} onChange={up("from")} /></Field>
-          <Field label="To"><input type="date" value={f.to} onChange={up("to")} /></Field>
-        </>
-      ) : null}
-      <Field label="Type">
-        <select value={f.docType} onChange={up("docType")}>
-          <option value="">All</option><option value="invoice">Invoice</option><option value="credit_note">Credit note</option><option value="debit_note">Debit note</option>
-        </select>
-      </Field>
-      <Field label="Status">
-        <select value={f.status} onChange={up("status")}><option value="">All</option><option value="active">Active</option><option value="cancelled">Cancelled</option></select>
-      </Field>
-      {extra}
-      <Field label="Search"><input value={f.q} onChange={up("q")} placeholder="Number, name or GSTIN" /></Field>
-    </div>
+    <>
+      <div className="filters">
+        <Field label="Month">
+          <select value={f.period} onChange={up("period")}>
+            {periods.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            <option value="">Choose dates…</option>
+          </select>
+        </Field>
+        {!f.period ? (
+          <>
+            <Field label="From"><input type="date" value={f.from} onChange={up("from")} /></Field>
+            <Field label="To"><input type="date" value={f.to} onChange={up("to")} /></Field>
+          </>
+        ) : null}
+        <Field label="Search"><input value={f.q} onChange={up("q")} placeholder="Number, name or GSTIN" /></Field>
+      </div>
+      <details className="more">
+        <summary>More filters</summary>
+        <div className="filters">
+          <Field label="Type">
+            <select value={f.docType} onChange={up("docType")}>
+              <option value="">All</option><option value="invoice">Invoice</option><option value="credit_note">Credit note</option><option value="debit_note">Debit note</option>
+            </select>
+          </Field>
+          <Field label="Status">
+            <select value={f.status} onChange={up("status")}><option value="">All</option><option value="active">Active</option><option value="cancelled">Cancelled</option></select>
+          </Field>
+          {extra}
+        </div>
+      </details>
+    </>
   );
 }
 

@@ -13,6 +13,7 @@ export interface SessionUser {
   name: string;
   role: "owner" | "accountant";
   mustChangePassword: boolean;
+  tutorialDone: boolean;
   sessionId: number;
 }
 
@@ -87,6 +88,7 @@ export async function getSessionUser(db: Db, req: Request): Promise<SessionUser 
     name: row.u.name,
     role: row.u.role,
     mustChangePassword: row.u.mustChangePassword,
+    tutorialDone: row.u.tutorialDone,
     sessionId: row.s.id,
   };
 }

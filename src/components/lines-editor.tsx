@@ -55,6 +55,9 @@ export function LinesEditor({ lines, setLines, context, itc, disabled }: {
 }) {
   const { meta } = useApp();
   const [hsn, setHsn] = useState<Hsn[]>([]);
+  // Everyday columns only; discount, unit, cess and supply type appear on request (or when already used).
+  const [showMore, setShowMore] = useState(() =>
+    lines.some((l) => (l.discount && Number(l.discount) !== 0) || l.cessRateBp > 0 || l.supplyKind !== "taxable"));
   const [calc, setCalc] = useState<Calc | null>(null);
   const [calcError, setCalcError] = useState<string | null>(null);
   const seq = useRef(0);
@@ -98,8 +101,8 @@ export function LinesEditor({ lines, setLines, context, itc, disabled }: {
         <table className="lines">
           <thead>
             <tr>
-              <th>#</th><th>Description</th><th>HSN/SAC</th><th>Qty</th><th>Unit</th><th>Rate (₹)</th><th>Discount (₹)</th>
-              <th>GST</th><th>Cess %</th><th>Kind</th>{itc ? <th>ITC</th> : null}
+              <th>#</th><th>Description</th><th>HSN/SAC</th><th>Qty</th>{showMore ? <th>Unit</th> : null}<th>Rate (₹)</th>
+              {showMore ? <th>Discount (₹)</th> : null}<th>GST</th>{showMore ? <><th>Cess %</th><th>Kind</th></> : null}{itc ? <th>ITC</th> : null}
               <th className="num">Taxable</th><th className="num">Tax</th><th className="num">Amount</th><th></th>
             </tr>
           </thead>
@@ -112,24 +115,24 @@ export function LinesEditor({ lines, setLines, context, itc, disabled }: {
                   <td><input aria-label="Description" value={l.description} disabled={disabled} onChange={(e) => update(i, { description: e.target.value })} style={{ minWidth: "10rem" }} /></td>
                   <td><input aria-label="HSN/SAC" list="hsn-list" value={l.hsnSac} disabled={disabled} onChange={(e) => pickHsn(i, e.target.value.trim())} /></td>
                   <td><input aria-label="Quantity" inputMode="decimal" value={l.qty} disabled={disabled} onChange={(e) => update(i, { qty: e.target.value })} /></td>
-                  <td>
+                  {showMore ? <td>
                     <select aria-label="Unit" value={l.unit} disabled={disabled} onChange={(e) => update(i, { unit: e.target.value })}>
                       {(meta.uqc.includes(l.unit) ? meta.uqc : [l.unit, ...meta.uqc]).map((u) => <option key={u}>{u}</option>)}
                     </select>
-                  </td>
+                  </td> : null}
                   <td><input aria-label="Rate" inputMode="decimal" value={l.unitPrice} disabled={disabled} onChange={(e) => update(i, { unitPrice: e.target.value })} /></td>
-                  <td><input aria-label="Discount" inputMode="decimal" value={l.discount} disabled={disabled} onChange={(e) => update(i, { discount: e.target.value })} /></td>
+                  {showMore ? <td><input aria-label="Discount" inputMode="decimal" value={l.discount} disabled={disabled} onChange={(e) => update(i, { discount: e.target.value })} /></td> : null}
                   <td>
                     <select aria-label="GST rate" value={l.gstRateBp} disabled={disabled} onChange={(e) => update(i, { gstRateBp: Number(e.target.value) })}>
                       {(rates.some((r) => r.rateBp === l.gstRateBp) ? rates : [...rates, { id: -1, rateBp: l.gstRateBp, label: `${l.gstRateBp / 100}%` }]).map((r) => <option key={r.rateBp} value={r.rateBp}>{r.label}</option>)}
                     </select>
                   </td>
-                  <td><input aria-label="Cess percent" inputMode="decimal" value={l.cessRateBp ? String(l.cessRateBp / 100) : ""} disabled={disabled} onChange={(e) => update(i, { cessRateBp: Math.round((Number(e.target.value) || 0) * 100) })} style={{ minWidth: "3.5rem" }} /></td>
+                  {showMore ? <><td><input aria-label="Cess percent" inputMode="decimal" value={l.cessRateBp ? String(l.cessRateBp / 100) : ""} disabled={disabled} onChange={(e) => update(i, { cessRateBp: Math.round((Number(e.target.value) || 0) * 100) })} style={{ minWidth: "3.5rem" }} /></td>
                   <td>
                     <select aria-label="Supply kind" value={l.supplyKind} disabled={disabled} onChange={(e) => update(i, { supplyKind: e.target.value })}>
                       {meta.supplyKinds.map((k) => <option key={k} value={k}>{KIND_LABEL[k] ?? k}</option>)}
                     </select>
-                  </td>
+                  </td></> : null}
                   {itc ? (
                     <td>
                       <label style={{ whiteSpace: "nowrap" }}><input type="checkbox" checked={l.itcEligible} disabled={disabled} onChange={(e) => update(i, { itcEligible: e.target.checked })} />Claim</label>
@@ -146,7 +149,10 @@ export function LinesEditor({ lines, setLines, context, itc, disabled }: {
           </tbody>
         </table>
       </div>
-      {!disabled ? <button type="button" onClick={() => setLines([...lines, blankLine(lines[lines.length - 1]?.gstRateBp, !(itc && meta.business.noItcScheme))])}>Add line</button> : null}
+      <div className="actions">
+      {!disabled ? <button type="button" onClick={() => setLines([...lines, blankLine(lines[lines.length - 1]?.gstRateBp, !(itc && meta.business.noItcScheme))])}>Add another item</button> : null}
+      <label><input type="checkbox" checked={showMore} onChange={(e) => setShowMore(e.target.checked)} />Show discount, unit, cess and supply type</label>
+      </div>
       {ready && calcError ? <p className="muted">Preview: {calcError}</p> : null}
       {shown ? (
         <div className="table-wrap" style={{ maxWidth: 420 }}>

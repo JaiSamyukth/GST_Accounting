@@ -15,6 +15,7 @@ export const users = pgTable("users", {
   passwordHash: text("password_hash").notNull(),
   isActive: boolean("is_active").notNull().default(true),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
+  tutorialDone: boolean("tutorial_done").notNull().default(false),
   createdAt: created(),
   updatedAt: updated(),
 });

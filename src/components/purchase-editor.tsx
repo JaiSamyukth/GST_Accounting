@@ -46,6 +46,13 @@ export function PurchaseEditor({ existing }: { existing?: { doc: PDoc; lines: PL
   }, []);
 
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
+  // Opened by default only when this bill already uses one of the extra options.
+  const [moreOpen] = useState(() => !!(d && (d.docType !== "invoice" || d.priceMode === "inclusive" || d.reverseCharge || d.category !== "goods" || d.notes)));
+  const setGstin = (v: string) => {
+    const g = v.toUpperCase().replace(/\s+/g, "");
+    // A GSTIN starts with the state code: use it as the supplier's state.
+    setF((x) => ({ ...x, supplierGstin: g, supplierStateCode: g.length >= 2 && meta.states.some((st) => st.code === g.slice(0, 2)) ? g.slice(0, 2) : x.supplierStateCode }));
+  };
   const pickParty = (name: string) => {
     const p = parties.find((x) => x.name === name);
     if (p) setF((x) => ({ ...x, supplierId: p.id, supplierName: p.name, supplierGstin: p.gstin, supplierStateCode: p.stateCode }));
@@ -97,51 +104,54 @@ export function PurchaseEditor({ existing }: { existing?: { doc: PDoc; lines: PL
       <form onSubmit={save}>
         <fieldset disabled={cancelled}>
           <div className="grid">
-            <Field label="Type">
-              <select value={f.docType} onChange={(e) => set("docType", e.target.value as DocType)}>
-                <option value="invoice">Bill / invoice</option><option value="credit_note">Credit note from supplier</option><option value="debit_note">Debit note from supplier</option>
-              </select>
-            </Field>
-            <Field label="Bill number"><input value={f.number} onChange={(e) => set("number", e.target.value)} maxLength={16} required /></Field>
+            <Field label="Supplier's bill number"><input value={f.number} onChange={(e) => set("number", e.target.value)} maxLength={16} required /></Field>
             <Field label="Bill date"><input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} required /></Field>
-            <Field label="Prices are">
-              <select value={f.priceMode} onChange={(e) => set("priceMode", e.target.value as "exclusive" | "inclusive")}>
-                <option value="exclusive">Before GST</option><option value="inclusive">Including GST</option>
-              </select>
-            </Field>
           </div>
           <h2>Supplier</h2>
           <datalist id="suppliers">{parties.map((p) => <option key={p.id} value={p.name}>{p.gstin}</option>)}</datalist>
           <div className="grid">
-            <Field label="Name"><input list="suppliers" value={f.supplierName} onChange={(e) => pickParty(e.target.value)} required /></Field>
-            <Field label="GSTIN" hint="Empty for an unregistered supplier (no ITC)."><input value={f.supplierGstin} onChange={(e) => set("supplierGstin", e.target.value.toUpperCase())} maxLength={15} /></Field>
-            <Field label="Supplier state">
-              <select value={f.supplierStateCode} onChange={(e) => set("supplierStateCode", e.target.value)}>
-                {meta.states.filter((s) => s.code !== "96").map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}
-              </select>
-            </Field>
+            <Field label="Supplier name" hint="Start typing to pick a saved supplier."><input list="suppliers" value={f.supplierName} onChange={(e) => pickParty(e.target.value)} required /></Field>
+            <Field label="Supplier GSTIN" hint="Leave empty if the supplier is not registered (then no ITC)."><input value={f.supplierGstin} onChange={(e) => setGstin(e.target.value)} maxLength={15} /></Field>
           </div>
-          <div className="grid">
-            <Field label="Category">
-              <select value={f.category} onChange={(e) => set("category", e.target.value)}>
-                {meta.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
-              </select>
-            </Field>
-            <Field label="Claim ITC in period" hint="Leave as automatic to use the bill's own period.">
-              <select value={f.itcPeriod} onChange={(e) => set("itcPeriod", e.target.value)}>
-                <option value="">Automatic</option>
-                {meta.periods.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-              </select>
-            </Field>
-            {f.docType !== "invoice" ? <Field label="Original bill number"><input value={f.originalNumber} onChange={(e) => set("originalNumber", e.target.value)} /></Field> : null}
-          </div>
-          <Check label="Reverse charge (you pay the GST)" checked={f.reverseCharge} onChange={(v) => set("reverseCharge", v)} />
-          {meta.business.noItcScheme ? <div className="notice">Your business pays GST at 5% without input tax credit, so new lines start with ITC unticked. Tick a line only if that purchase really is claimable.</div> : null}
+          {meta.business.noItcScheme ? <div className="notice">Your business pays GST at 5% without input tax credit, so new items start with &quot;Claim&quot; unticked. Tick an item only if that purchase really is claimable.</div> : null}
           {blocked ? <div className="notice">This category is blocked under section 17(5): ITC is shown in 4A(5) and reversed in 4B(1).</div> : null}
           <h2>Items</h2>
           <LinesEditor lines={lines} setLines={setLines} itc disabled={cancelled}
             context={{ placeOfSupply: meta.business.stateCode, supplierStateCode: f.supplierStateCode, priceMode: f.priceMode }} />
-          <Field label="Notes"><textarea value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+          <details className="more" open={moreOpen}>
+            <summary>More options</summary>
+            <div className="grid">
+              <Field label="Type">
+                <select value={f.docType} onChange={(e) => set("docType", e.target.value as DocType)}>
+                  <option value="invoice">Bill / invoice</option><option value="credit_note">Credit note from supplier</option><option value="debit_note">Debit note from supplier</option>
+                </select>
+              </Field>
+              {f.docType !== "invoice" ? <Field label="Original bill number"><input value={f.originalNumber} onChange={(e) => set("originalNumber", e.target.value)} /></Field> : null}
+              <Field label="Prices are">
+                <select value={f.priceMode} onChange={(e) => set("priceMode", e.target.value as "exclusive" | "inclusive")}>
+                  <option value="exclusive">Before GST (GST added on top)</option><option value="inclusive">Including GST</option>
+                </select>
+              </Field>
+              <Field label="Supplier state" hint="Filled from the GSTIN.">
+                <select value={f.supplierStateCode} onChange={(e) => set("supplierStateCode", e.target.value)}>
+                  {meta.states.filter((s) => s.code !== "96").map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+                </select>
+              </Field>
+              <Field label="What was bought">
+                <select value={f.category} onChange={(e) => set("category", e.target.value)}>
+                  {meta.categories.map((c) => <option key={c.key} value={c.key}>{c.label}</option>)}
+                </select>
+              </Field>
+              <Field label="Claim ITC in month" hint="Automatic = the bill's own month.">
+                <select value={f.itcPeriod} onChange={(e) => set("itcPeriod", e.target.value)}>
+                  <option value="">Automatic</option>
+                  {meta.periods.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+                </select>
+              </Field>
+            </div>
+            <Check label="Reverse charge (you pay the GST instead of the supplier)" checked={f.reverseCharge} onChange={(v) => set("reverseCharge", v)} />
+            <Field label="Notes"><textarea value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+          </details>
         </fieldset>
         <Err error={error} />
         <Ok message={ok} />

@@ -70,3 +70,28 @@ ul.plain { padding-left: 1.2rem; margin: 0.3rem 0; }
   .topbar, .nav, .actions, .filters { display: none; }
   main { padding: 0; }
 }
+
+/* Collapsible sections ("More options", settings groups). */
+details.more { border: 1px solid #ccc; border-radius: 4px; padding: 0.4rem 0.7rem; margin: 0.8rem 0; }
+details.more > summary { cursor: pointer; font-weight: 600; padding: 0.2rem 0; }
+details.more[open] > summary { margin-bottom: 0.5rem; }
+details.section { border-top: 1px solid #ccc; padding: 0.6rem 0; }
+details.section > summary { cursor: pointer; font-size: 1.1rem; font-weight: 600; padding: 0.3rem 0; }
+
+/* Bigger main actions, easy to tap on a phone. */
+.button.big, button.big { padding: 0.7rem 1.1rem; font-size: 1.05rem; }
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0.6rem; margin: 0.8rem 0; }
+.choice { display: block; border: 1px solid #ccc; border-radius: 4px; padding: 0.7rem 0.8rem; text-decoration: none; color: #111; }
+.choice:visited { color: #111; }
+.choice b { display: block; color: #0645ad; margin-bottom: 0.15rem; }
+.choice:hover { border-color: #0645ad; }
+
+/* Numbered steps (returns, tutorial). */
+.step { border: 1px solid #ccc; border-radius: 4px; padding: 0.6rem 0.8rem; margin: 0.7rem 0; }
+.step h2 { margin: 0 0 0.4rem; font-size: 1.05rem; }
+.step.done { border-color: #070; }
+.step.done h2::after { content: "  ✓ done"; color: #070; font-weight: 400; font-size: 0.9rem; }
+.tutorial { max-width: 720px; }
+.tutorial .progress { color: #555; margin: 0.2rem 0 0.6rem; }
+.tutorial ol, .tutorial ul { padding-left: 1.3rem; }
+.tutorial li { margin: 0.3rem 0; }
