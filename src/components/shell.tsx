@@ -4,8 +4,9 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
 import { api } from "./api";
+import { TutorialBanner } from "./tutorial-banner";
 
-export interface Me { id: number; email: string; name: string; role: "owner" | "accountant"; mustChangePassword: boolean }
+export interface Me { id: number; email: string; name: string; role: "owner" | "accountant"; mustChangePassword: boolean; tutorialDone: boolean }
 export interface Meta {
   states: Array<{ code: string; name: string }>;
   supplyKinds: string[];
@@ -21,7 +22,7 @@ export interface Meta {
   today: string;
 }
 
-const Ctx = createContext<{ me: Me; meta: Meta; refreshMeta: () => void } | null>(null);
+const Ctx = createContext<{ me: Me; meta: Meta; refreshMeta: () => void; setTutorialDone: (done: boolean) => Promise<void> } | null>(null);
 
 export function useApp() {
   const c = useContext(Ctx);
@@ -29,10 +30,9 @@ export function useApp() {
   return c;
 }
 
-const NAV = [
-  ["/", "This month"], ["/sales", "Sales"], ["/purchases", "Purchases"], ["/returns", "Returns"],
-  ["/reports", "Reports"], ["/import", "Import / export"], ["/parties", "Parties"], ["/settings", "Settings"],
-] as const;
+const NAV = [["/", "Home"], ["/sales", "Sales"], ["/purchases", "Purchases"], ["/returns", "Returns"], ["/more", "More"]] as const;
+/** Pages reached from "More". */
+const MORE = ["/more", "/parties", "/reports", "/import", "/settings", "/tutorial"];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -53,6 +53,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
         if (live) {
           setMe(s.user);
           setMeta(m);
+          // First sign-in: start with the tutorial (it can be skipped, and reopened from Settings).
+          if (!s.user.tutorialDone && window.location.pathname === "/") router.replace("/tutorial");
         }
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : String(e));
@@ -68,10 +70,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
     await api("/api/auth/logout", { method: "POST" }).catch(() => undefined);
     router.replace("/login");
   };
-  const active = (href: string) => (href === "/" ? path === "/" : path === href || path.startsWith(href + "/"));
+  const active = (href: string) => {
+    if (href === "/") return path === "/";
+    if (href === "/more") return MORE.some((p) => path === p || path.startsWith(p + "/"));
+    return path === href || path.startsWith(href + "/");
+  };
+  const setTutorialDone = async (done: boolean) => {
+    await api("/api/auth/tutorial", { body: { done } });
+    setMe((m) => (m ? { ...m, tutorialDone: done } : m));
+  };
 
   return (
-    <Ctx.Provider value={{ me, meta, refreshMeta: () => setTick((t) => t + 1) }}>
+    <Ctx.Provider value={{ me, meta, refreshMeta: () => setTick((t) => t + 1), setTutorialDone }}>
       <div className="topbar">
         <span className="name">{meta.business.tradeName || meta.business.legalName || "GST Accounting"}</span>
         <span className="muted">{me.name} ({me.role})</span>
@@ -83,6 +93,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
       <main>
+        <TutorialBanner />
         {me.mustChangePassword && path !== "/settings" ? (
           <div className="notice">Please set a new password in <Link href="/settings#password">Settings</Link>.</div>
         ) : null}

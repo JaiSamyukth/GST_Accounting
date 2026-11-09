@@ -66,3 +66,18 @@ describe("auth and roles", () => {
     expect(r.status).toBe(409);
   });
 });
+
+describe("tutorial flag", () => {
+  it("starts false for a new user and can be set and cleared", async () => {
+    const { freshDb: fresh, Client: C, OWNER: O } = await import("./helpers");
+    const tut = await import("@/app/api/auth/tutorial/route");
+    await fresh();
+    const c = new C();
+    await c.call(setup.POST, { body: { ...O, businessName: "Dev Caters" } });
+    expect((await c.call(me.GET)).data.user.tutorialDone).toBe(false);
+    expect((await c.call(tut.POST, { body: { done: true } })).data.tutorialDone).toBe(true);
+    expect((await c.call(me.GET)).data.user.tutorialDone).toBe(true);
+    await c.call(tut.POST, { body: { done: false } });
+    expect((await c.call(status.GET)).data.user.tutorialDone).toBe(false);
+  });
+});

@@ -19,7 +19,7 @@ export default function PurchasesPage() {
   return (
     <>
       <h1>Purchases</h1>
-      <div className="actions"><Link className="button primary" href="/purchases/new">New purchase bill</Link></div>
+      <div className="actions"><Link className="button primary big" href="/purchases/new">New purchase bill</Link></div>
       <ListFilters f={f} set={(x) => setF({ ...f, ...x })} periods={meta.periods} extra={
         <Field label="ITC">
           <select value={f.itc} onChange={(e) => setF({ ...f, itc: e.target.value, page: 1 })}>
@@ -53,7 +53,7 @@ export default function PurchasesPage() {
           <Pager page={data.page} pageSize={data.pageSize} total={data.total} go={(p) => setF({ ...f, page: p })} />
         </>
       )}
-      <p>Download: {["pdf", "xlsx", "csv", "json"].map((fmt) => <span key={fmt}><a href={`/api/purchases/export${exportQ}${exportQ ? "&" : "?"}fmt=${fmt}`}>{fmt.toUpperCase()}</a>{" "}</span>)}</p>
+      <p className="muted">Download this list: {["pdf", "xlsx", "csv", "json"].map((fmt) => <span key={fmt}><a href={`/api/purchases/export${exportQ}${exportQ ? "&" : "?"}fmt=${fmt}`}>{fmt.toUpperCase()}</a>{" "}</span>)}</p>
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { and, count, desc, eq, gte, lte } from "drizzle-orm";
-import { auditLog, purchases, salesDocs } from "@/db/schema";
+import { auditLog, parties, purchases, salesDocs } from "@/db/schema";
 import { dueDates, periodOf, periodRange, previousPeriod, todayIso } from "@/lib/gst/periods";
 import { computeReturns, ensurePeriod } from "@/lib/returns-service";
 import { route } from "@/lib/route";
@@ -28,6 +28,9 @@ export const GET = route({}, async ({ db }) => {
   if (prevRow.gstr3bStatus !== "filed" && today > prevDue.gstr3b) warnings.push(`GSTR-3B for ${periodRange(prev).label} was due on ${prevDue.gstr3b} and is not marked filed.`);
 
   const recent = await db.select().from(auditLog).orderBy(desc(auditLog.at)).limit(10);
+  const [anyParty] = await db.select({ n: count() }).from(parties);
+  const [anySale] = await db.select({ n: count() }).from(salesDocs);
+  const setup = { business: !!(biz.gstin && biz.legalName), parties: Number(anyParty.n) > 0, sale: Number(anySale.n) > 0 };
   return {
     period: key,
     label: r.label,
@@ -37,6 +40,7 @@ export const GET = route({}, async ({ db }) => {
     cashPayable: cash.igst + cash.cgst + cash.sgst + cash.cess,
     due: dueDates(key),
     warnings,
+    setup,
     recent: recent.map((a) => ({ at: a.at, user: a.userEmail, action: a.action, entityType: a.entityType, summary: a.summary })),
   };
 });

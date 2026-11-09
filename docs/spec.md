@@ -52,7 +52,7 @@ Full feature parity with the old application, except where section 4 says otherw
 | One Next.js project replaces FastAPI + Vite | Deploy to Vercel as one project; no separate backend host |
 | Neon Postgres only | Vercel-native; no SQLite fallback |
 | **Uploads go to Neon Object Storage.** Private `gst-documents` bucket, no local disk | Invoices and reports stay generated on demand; bill photos and supplier PDFs need somewhere durable that survives a Vercel redeploy. Files are streamed through the app so the bucket stays private |
-| Plain UI: no order-book theme, webfonts, tour, guide widget, glossary, animation | Explicit request: "very very simple" |
+| Plain UI: no order-book theme, webfonts, pop-over tour, guide widget, glossary, animation; a plain step-by-step tutorial page instead | Explicit request: "very very simple", with a tutorial for first-time use |
 | Integer paise + basis points instead of Python `Decimal` | Exact money arithmetic in JavaScript without a decimal dependency |
 | Zod validation at every boundary | Replaces Pydantic |
 | Vitest + PGlite replaces pytest | In-process Postgres for integration tests; no external DB needed |
@@ -248,12 +248,25 @@ Plain, utilitarian, and readable at 360 px.
 
 - Global stylesheet only: system font stack, 16 px body, black on white, one accent (blue links),
   1 px grey borders, 4 px radius, no shadows or gradients.
-- Layout: top bar with the business name and sign-out; a simple horizontal nav
-  (This month · Sales · Purchases · Returns · Reports · Import · Parties · Settings).
+- Layout: top bar with the business name and sign-out; a simple horizontal nav with five items
+  (Home · Sales · Purchases · Returns · More). More lists Customers and suppliers, Reports, Import and export,
+  Settings and Tutorial.
+- Simple first: forms show only the everyday fields (number, date, party, GSTIN, place of supply, items with
+  description, HSN/SAC, qty, rate, GST). Price mode, address, notes, export, reverse charge, purchase category and
+  ITC month sit under a "More options" section, which opens by itself when a document already uses one of them.
+  Item discount, unit, cess and supply type appear behind a tick box. Typing a GSTIN fills the state.
+- Returns are five numbered steps: check, match GSTR-2B, approve, file on the portal (GSTR-1 JSON, GSTR-3B PDF, ARNs),
+  record payment. Detailed tables, other formats, ITC reversals and lock/unlock are collapsed.
+- Tutorial: a 12-step page at `/tutorial` (welcome, business details, parties, a sale, corrections, a purchase,
+  Home, month-end check, filing, reports/import, users/backup, done). It opens after owner setup and on each user's
+  first sign-in (`users.tutorial_done`), can be skipped, resumes where it was left (a banner links back), and is
+  reachable from Settings and More.
+  Steps that describe a page have a button that opens it; the month-end steps use the same numbered
+  names as the Returns page (1 Check to 5 Record the payment).
 - Tables: bordered, compact, right-aligned numbers using tabular numerals.
 - Forms: label above field, native inputs, one primary button per screen.
 - Numbers: plain inputs accepting rupees with two decimals; stored as paise.
-- No icons beyond text, no illustrations, no empty-state art, no tour, no modals except confirm.
+- No icons beyond text, no illustrations, no empty-state art, no pop-over tour, no modals except confirm.
 - One page per area:
 
 | Route | Screen |

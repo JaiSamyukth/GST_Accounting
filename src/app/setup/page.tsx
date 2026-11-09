@@ -24,7 +24,7 @@ export default function SetupPage() {
     setError(null);
     try {
       await api("/api/auth/setup", { body: { businessName: f.businessName, stateCode: f.stateCode, name: f.name, email: f.email, password: f.password } });
-      router.replace("/settings");
+      router.replace("/tutorial");
     } catch (err) {
       setError(errorText(err));
     } finally {
@@ -35,7 +35,7 @@ export default function SetupPage() {
   return (
     <main className="narrow">
       <h1>Set up</h1>
-      <p>Create the owner account. You can fill in GSTIN and other details in Settings next.</p>
+      <p>Welcome. Create the owner account for your business. A short tutorial follows to show you around.</p>
       <form onSubmit={submit}>
         <Field label="Business name"><input required value={f.businessName} onChange={set("businessName")} /></Field>
         <Field label="State">

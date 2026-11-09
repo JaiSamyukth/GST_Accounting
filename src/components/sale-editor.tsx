@@ -59,6 +59,13 @@ export function SaleEditor({ existing, docType: newType }: { existing?: SaleExis
   }, [existing, docType]);
 
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF((x) => ({ ...x, [k]: v }));
+  // Opened by default only when this document already uses one of the extra options.
+  const [moreOpen] = useState(() => !!(d && (d.priceMode === "inclusive" || d.isExport || d.reverseCharge || d.partyAddress || d.orderRef || d.notes)));
+  const setGstin = (v: string) => {
+    const g = v.toUpperCase().replace(/\s+/g, "");
+    // A GSTIN starts with the state code: use it as the place of supply.
+    setF((x) => ({ ...x, partyGstin: g, placeOfSupply: g.length >= 2 && meta.states.some((st) => st.code === g.slice(0, 2)) ? g.slice(0, 2) : x.placeOfSupply }));
+  };
   const pickParty = (name: string) => {
     const p = parties.find((x) => x.name === name);
     if (p) setF((x) => ({ ...x, partyId: p.id, partyName: p.name, partyGstin: p.gstin, partyAddress: p.address, placeOfSupply: p.stateCode }));
@@ -142,33 +149,21 @@ export function SaleEditor({ existing, docType: newType }: { existing?: SaleExis
       <form onSubmit={save}>
         <fieldset disabled={readOnly}>
           <div className="grid">
-            <Field label="Number" hint={d ? undefined : "Suggested automatically; you may change it."}><input value={d?.amendsId || amending ? shownNumber : f.number} disabled={!!d?.amendsId || amending} onChange={(e) => set("number", e.target.value)} maxLength={16} required /></Field>
+            <Field label={docType === "invoice" ? "Invoice number" : "Note number"} hint={d ? undefined : "Filled in for you; change it if you need to."}><input value={d?.amendsId || amending ? shownNumber : f.number} disabled={!!d?.amendsId || amending} onChange={(e) => set("number", e.target.value)} maxLength={16} required /></Field>
             <Field label="Date"><input type="date" value={f.date} onChange={(e) => set("date", e.target.value)} required /></Field>
-            <Field label="Prices are">
-              <select value={f.priceMode} onChange={(e) => set("priceMode", e.target.value as "exclusive" | "inclusive")}>
-                <option value="exclusive">Before GST</option><option value="inclusive">Including GST</option>
-              </select>
-            </Field>
-            <Field label="Order / event reference"><input value={f.orderRef} onChange={(e) => set("orderRef", e.target.value)} /></Field>
           </div>
           <h2>Customer</h2>
           <datalist id="customers">{parties.map((p) => <option key={p.id} value={p.name}>{p.gstin}</option>)}</datalist>
           <div className="grid">
-            <Field label="Name"><input list="customers" value={f.partyName} onChange={(e) => pickParty(e.target.value)} required /></Field>
-            {!f.isExport ? <Field label="GSTIN" hint="Leave empty for an unregistered customer."><input value={f.partyGstin} onChange={(e) => set("partyGstin", e.target.value.toUpperCase())} maxLength={15} /></Field> : null}
+            <Field label="Customer name" hint="Start typing to pick a saved customer."><input list="customers" value={f.partyName} onChange={(e) => pickParty(e.target.value)} required /></Field>
+            {!f.isExport ? <Field label="Customer GSTIN" hint="Leave empty if the customer is not registered."><input value={f.partyGstin} onChange={(e) => setGstin(e.target.value)} maxLength={15} /></Field> : null}
             {!f.isExport ? (
-              <Field label="Place of supply">
+              <Field label="Place of supply" hint="The state where the event is held.">
                 <select value={f.placeOfSupply} onChange={(e) => set("placeOfSupply", e.target.value)}>
-                  {meta.states.filter((s) => s.code !== "96").map((s) => <option key={s.code} value={s.code}>{s.code} – {s.name}</option>)}
+                  {meta.states.filter((s) => s.code !== "96").map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
                 </select>
               </Field>
             ) : null}
-            <Field label="Address"><input value={f.partyAddress} onChange={(e) => set("partyAddress", e.target.value)} /></Field>
-          </div>
-          <div className="grid">
-            <Check label="Export (outside India)" checked={f.isExport} onChange={(v) => set("isExport", v)} />
-            {f.isExport ? <Check label="Export with payment of IGST" checked={f.exportWithIgst} onChange={(v) => set("exportWithIgst", v)} /> : null}
-            <Check label="Reverse charge applies" checked={f.reverseCharge} onChange={(v) => set("reverseCharge", v)} />
           </div>
           {docType !== "invoice" ? (
             <div className="grid">
@@ -180,7 +175,22 @@ export function SaleEditor({ existing, docType: newType }: { existing?: SaleExis
           <h2>Items</h2>
           <LinesEditor lines={lines} setLines={setLines} disabled={readOnly}
             context={{ placeOfSupply: f.placeOfSupply, priceMode: f.priceMode, isExport: f.isExport, exportWithIgst: f.exportWithIgst }} />
-          <Field label="Notes (printed on the invoice)"><textarea value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+          <details className="more" open={moreOpen}>
+            <summary>More options</summary>
+            <div className="grid">
+              <Field label="Prices are">
+                <select value={f.priceMode} onChange={(e) => set("priceMode", e.target.value as "exclusive" | "inclusive")}>
+                  <option value="exclusive">Before GST (GST added on top)</option><option value="inclusive">Including GST</option>
+                </select>
+              </Field>
+              <Field label="Customer address"><input value={f.partyAddress} onChange={(e) => set("partyAddress", e.target.value)} /></Field>
+              <Field label="Order / event reference"><input value={f.orderRef} onChange={(e) => set("orderRef", e.target.value)} /></Field>
+            </div>
+            <Field label="Notes (printed on the invoice)"><textarea value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
+            <Check label="Export (customer outside India)" checked={f.isExport} onChange={(v) => set("isExport", v)} />
+            {f.isExport ? <Check label="Export with payment of IGST" checked={f.exportWithIgst} onChange={(v) => set("exportWithIgst", v)} /> : null}
+            <Check label="Reverse charge applies" checked={f.reverseCharge} onChange={(v) => set("reverseCharge", v)} />
+          </details>
         </fieldset>
         <Err error={error} />
         <Ok message={ok} />

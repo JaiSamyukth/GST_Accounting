@@ -10,7 +10,7 @@ A GST accounting application for one catering business. It records sales and pur
 
 1. **No Python. No second service.** Everything is Next.js — pages and `/api` route handlers in the same project.
 2. **Documents are generated; uploads are optional.** Invoices, notes, returns and reports are rendered as PDF/XLSX/CSV/JSON and streamed. Uploaded bill photos and PDFs go to Neon Object Storage (S3-compatible) — never to the Vercel filesystem. Never commit secrets: real values live in `.env.local`.
-3. **No theming.** The UI is plain: white background, system font stack, black/grey text, simple bordered tables and forms. No custom palette, webfonts, illustrations, tour, glossary widget or animation. One stylesheet. Do not add a component library.
+3. **No theming, and keep it simple.** The UI is plain: white background, system font stack, black/grey text, simple bordered tables and forms. No custom palette, webfonts, illustrations, glossary widget, pop-over tour or animation. One stylesheet. Do not add a component library. Show the everyday fields; put the rest behind a "More options" `<details>`. The getting-started tutorial is an ordinary page (`/tutorial`), opened on first sign-in and from Settings and More.
 4. **All money is integer paise** (`bigint` columns, `number` in code). Never use floats for money. Rates are integer basis points (5% = 500 bp). Round half-up per line tax component.
 5. **All GST computation is server-side.** The browser may call `POST /api/gst/calculate` for a live preview; it must never be the source of truth.
 6. **Every financial mutation is audited** and blocked when the period is locked.
@@ -43,7 +43,7 @@ npm run lint         # eslint
 npm run typecheck    # tsc --noEmit
 npm test             # vitest run
 npm run db:generate  # drizzle-kit generate
-npm run db:push      # apply schema to DATABASE_URL
+npm run db:migrate   # apply drizzle/ migrations (Vercel runs this on every deploy)
 npm run db:seed      # business defaults, rates, HSN
 ```
 
@@ -64,7 +64,8 @@ a test fixture, a log line or a client bundle.
 | `COOKIE_SECURE` | `true` on Vercel, `false` on localhost |
 | `SESSION_HOURS` | Session lifetime |
 
-The Neon project is `gst-invoice` (`long-sky-00413735`), branch `production`, region Singapore.
+The Neon project is "GST Invoice" (`quiet-bar-79776528`), branch `production`, region US East (Ohio);
+Vercel functions run in `cle1` next to it.
 Object storage is only reachable with the credential above; uploads are streamed through the app
 so the bucket stays private.
 

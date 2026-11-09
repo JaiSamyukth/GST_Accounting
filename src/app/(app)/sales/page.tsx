@@ -20,9 +20,9 @@ export default function SalesPage() {
     <>
       <h1>Sales</h1>
       <div className="actions">
-        <Link className="button primary" href="/sales/new">New invoice</Link>
+        <Link className="button primary big" href="/sales/new">New invoice</Link>
         <Link className="button" href="/sales/new?type=credit_note">New credit note</Link>
-        <Link className="button" href="/sales/new?type=debit_note">New debit note</Link>
+        <Link href="/sales/new?type=debit_note">Debit note</Link>
       </div>
       <ListFilters f={f} set={(x) => setF({ ...f, ...x })} periods={meta.periods} extra={
         <Field label="Section">
@@ -56,7 +56,7 @@ export default function SalesPage() {
           <Pager page={data.page} pageSize={data.pageSize} total={data.total} go={(p) => setF({ ...f, page: p })} />
         </>
       )}
-      <p>Download: {["pdf", "xlsx", "csv", "json"].map((fmt) => <span key={fmt}><a href={`/api/sales/export${exportQ}${exportQ ? "&" : "?"}fmt=${fmt}`}>{fmt.toUpperCase()}</a>{" "}</span>)}</p>
+      <p className="muted">Download this list: {["pdf", "xlsx", "csv", "json"].map((fmt) => <span key={fmt}><a href={`/api/sales/export${exportQ}${exportQ ? "&" : "?"}fmt=${fmt}`}>{fmt.toUpperCase()}</a>{" "}</span>)}</p>
     </>
   );
 }
